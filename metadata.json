@@ -1,0 +1,6 @@
+{
+  "name": "Cine AI Studio",
+  "description": "Orquestador de cine con subagentes de IA especializados por departamento y memoria central.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
