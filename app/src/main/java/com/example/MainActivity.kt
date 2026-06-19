@@ -286,6 +286,7 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
                     // Lista de 24 subagentes agrupados por Capas
                     SubagentsTreeMenu(
                         selectedSubagent = selectedSubagent,
+                        viewModel = viewModel,
                         onSelectSubagent = { viewModel.selectSubagent(it) }
                     )
                 }
@@ -339,6 +340,7 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
                                 )
                                 SubagentsTreeMenu(
                                     selectedSubagent = selectedSubagent,
+                                    viewModel = viewModel,
                                     onSelectSubagent = {
                                         viewModel.selectSubagent(it)
                                         activeTabId = 1 // Salta a la consola para editar
@@ -357,6 +359,7 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
                         }
                         2 -> {
                             UnifiedBibliaPane(
+                                viewModel = viewModel,
                                 project = project,
                                 memories = projectMemories,
                                 onClearMemories = { viewModel.clearProjectBible() }
@@ -622,8 +625,10 @@ fun TopAppBarCompact(
 @Composable
 fun SubagentsTreeMenu(
     selectedSubagent: CinemaSubagent?,
+    viewModel: MovieProjectViewModel,
     onSelectSubagent: (CinemaSubagent) -> Unit
 ) {
+    val subagentStates by viewModel.subagentStates.collectAsStateWithLifecycle()
     val grouped = CinemaSubagentsCatalog.list.groupBy { it.layer }
     val scrollState = rememberScrollState()
 
@@ -718,6 +723,40 @@ fun SubagentsTreeMenu(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color(0xFF888A92)
                                 )
+                                
+                                // Indicador de estado en cascada activo
+                                val state = subagentStates[agent.key]
+                                if (state != null) {
+                                    val (badgeText, badgeColor) = when (state) {
+                                        "RUNNING" -> "⚡ PROCESANDO" to Color(0xFF00FFCC)
+                                        "COMPLETED" -> "✅ SISTEMA OK" to Color(0xFF00E676)
+                                        "PAUSED_EXPENSIVE" -> {
+                                            val cost = viewModel.getSubagentCostInfo(agent.key)
+                                                ?.substringAfter("Costo estimado: ")
+                                                ?.substringBefore(" (") ?: "$0.05"
+                                            "⚠️ COMPRAR ($cost)" to Color(0xFFFFCC00)
+                                        }
+                                        "PENDING" -> "⏱️ EN COLA" to Color.Gray
+                                        "ERROR" -> "❌ ERROR" to Color.Red
+                                        else -> "" to Color.Transparent
+                                    }
+                                    if (badgeText.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Surface(
+                                            color = badgeColor.copy(alpha = 0.12f),
+                                            shape = RoundedCornerShape(4.dp),
+                                            border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.4f))
+                                        ) {
+                                            Text(
+                                                text = badgeText,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = badgeColor,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                             if (isSelected) {
                                 Icon(
@@ -802,6 +841,7 @@ fun WorkstationSection(
                 }
                 1 -> {
                     UnifiedBibliaPane(
+                        viewModel = viewModel,
                         project = project,
                         memories = memories,
                         onClearMemories = { viewModel.clearProjectBible() }
@@ -1118,12 +1158,51 @@ fun WorkstationConsolePane(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        // Si es un subagente de alto costo, alertamos sobre el cobro y solicitamos aprobación
+        val isExpensive = viewModel.isSubagentExpensive(selectedSubagent.key)
+        if (isExpensive) {
+            val costInfo = viewModel.getSubagentCostInfo(selectedSubagent.key) ?: ""
+            Surface(
+                color = Color(0xFF2B2404), // Fondo dorado oscuro satinado
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, Color(0xFFFFD700)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "💎",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(end = 10.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "ORQUESTADOR DE ALTO COSTO",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFD700)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "$costInfo • Este departamento utiliza redes generativas pesadas. Requiere tu confirmación manual para procesarse.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFE2E2E5)
+                        )
+                    }
+                }
+            }
+        }
+
         // Botón de Lanzamiento de Orquestación
         Button(
             onClick = { viewModel.processSubagentAction() },
             enabled = generationState != GenerationState.Loading,
             colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
+                containerColor = if (isExpensive) Color(0xFFFFD700) else MaterialTheme.colorScheme.primary,
                 disabledContainerColor = Color.DarkGray
             ),
             shape = RoundedCornerShape(10.dp),
@@ -1138,10 +1217,14 @@ fun WorkstationConsolePane(
                 Text("PROCESANDO EN REGLAS DE PIPELINE IA...", color = Color.Black, fontWeight = FontWeight.Bold)
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Lanzar", tint = Color.Black)
+                    Icon(
+                        imageVector = if (isExpensive) Icons.Default.Lock else Icons.Default.PlayArrow,
+                        contentDescription = "Lanzar",
+                        tint = Color.Black
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Orquestar ${selectedSubagent.name}",
+                        text = if (isExpensive) "Confirmar y Orquestar ${selectedSubagent.name}" else "Orquestar ${selectedSubagent.name}",
                         color = Color.Black,
                         fontWeight = FontWeight.Bold
                     )
@@ -1274,11 +1357,20 @@ fun WorkstationConsolePane(
 
 @Composable
 fun UnifiedBibliaPane(
+    viewModel: MovieProjectViewModel,
     project: MovieProject,
     memories: List<ProjectMemory>,
     onClearMemories: () -> Unit
 ) {
     val scrollState = rememberScrollState()
+
+    val ideaText by viewModel.videoIdeaState.collectAsStateWithLifecycle()
+    val durationText by viewModel.shortFilmDuration.collectAsStateWithLifecycle()
+    val actsText by viewModel.actsStructure.collectAsStateWithLifecycle()
+    val storyboardText by viewModel.generatedStoryboard.collectAsStateWithLifecycle()
+    val consistencyText by viewModel.directorConsistencyReport.collectAsStateWithLifecycle()
+    val workflowState by viewModel.storyboardWorkflowState.collectAsStateWithLifecycle()
+    val workflowError by viewModel.storyboardWorkflowError.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -1286,6 +1378,422 @@ fun UnifiedBibliaPane(
             .verticalScroll(scrollState)
             .padding(16.dp)
     ) {
+        // PANEL EXCLUSIVO DE CONTROL DE HISTORIA / STORYBOARD BASADO EN TIEMPO
+        when (workflowState) {
+            "IDLE" -> {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Paso 1",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "OBRA MAESTRA: PLANIFICADOR DE HISTORIA Y STORYBOARD",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Establece la idea de tu cortometraje y el tiempo estimado del corto. Nuestro Guionista Principal epectará una propuesta clásica estructurada en 3 Actos, delineará las tomas correspondientes alineadas con la duración seleccionada, y el Director de Escena auditará la consistencia lógica general para asegurar raccord técnico impecable.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.LightGray
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // TEXTFIELD IDEA
+                        Text(
+                            text = "PREMISA O IDEA DEL CORTOMETRAJE:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = ideaText,
+                            onValueChange = { viewModel.updateVideoIdea(it) },
+                            placeholder = { Text("Ej: Un astronauta descifra un mensaje musical de una estrella muerta que relata el fin del universo...") },
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // SELECCIÓN DE DURACIÓN (TIEMPO DEL CORTO)
+                        Text(
+                            text = "DURACIÓN ESTIMADA DEL CORTO:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("1 minuto", "3 minutos", "5 minutos", "10 minutos").forEach { opt ->
+                                val selected = durationText == opt
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { viewModel.updateShortFilmDuration(opt) },
+                                    color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
+                                    border = BorderStroke(
+                                        width = 1.dp,
+                                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier.padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = opt,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (selected) MaterialTheme.colorScheme.primary else Color.LightGray
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = { viewModel.startStoryboardCreation(ideaText, durationText) },
+                            enabled = ideaText.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                disabledContainerColor = Color.DarkGray
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = "Orquestar", tint = Color.Black)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "CONCEBIR 3 ACTOS Y STORYBOARD SEGURIZADO",
+                                    color = Color.Black,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            "GENERATING" -> {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "🎬 PROCESANDO HISTORIA Y PLAN DE FILME...",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf(
+                                "✍️ Paso 1: Estructurando propuesta formal en 3 Actos (Presentación, Desarrollo, Desenlace)",
+                                "📖 Paso 2: Guionista Principal redactando Storyboard Técnico de tomas para $durationText",
+                                "🛡️ Paso 3: Director de Escena auditando continuidad, raccord de cámara, sonido y ritmo lógico"
+                            ).forEach { stepText ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Paso",
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = stepText,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.LightGray
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            "ERROR" -> {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2C1316)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color.Red),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, contentDescription = "Error", tint = Color.Red)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Error en el Pipeline de Storyboard",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Red,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = workflowError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFFFD1D4)
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Button(
+                            onClick = { viewModel.resetStoryboardWorkflow() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text("Reintentar configuración", color = Color.White)
+                        }
+                    }
+                }
+            }
+
+            "AWAITING_APPROVAL" -> {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // BANNER DE ENCABEZADO DE REVISIÓN
+                    Surface(
+                        color = Color(0xFF2B2404),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFFFFD700)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("⭐", style = MaterialTheme.typography.titleLarge)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "PRE-PRODUCCIÓN DISPONIBLE PARA REVISIÓN",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFD700)
+                               )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Tratamiento narrativo completo de $durationText listo. El Director ha revisado espacial/temporalmente las tomas.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.LightGray
+                                )
+                            }
+                        }
+                    }
+
+                    // CARD 1: ESTRUCTURA EN 3 ACTOS
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🎭", style = MaterialTheme.typography.titleMedium)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "PROPUESTA DE 3 ACTOS",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            SelectionContainer {
+                                RenderMarkdownText(text = actsText)
+                            }
+                        }
+                    }
+
+                    // CARD 2: STORYBOARD DE TOMAS CON TIEMPO DE CORTO
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🎬", style = MaterialTheme.typography.titleMedium)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "STORYBOARD TÉCNICO Y DESGLOSE ($durationText)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            SelectionContainer {
+                                RenderMarkdownText(text = storyboardText)
+                            }
+                        }
+                    }
+
+                    // CARD 3: REPORTE DE CONSISTENCIA DIRECTORIAL
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF141913)), // Verde satinado oscuro
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF4CAF50)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🛡️", style = MaterialTheme.typography.titleMedium)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "AUDITORÍA DE CONSISTENCIA COHERENTE (DIRECTOR)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF4CAF50)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Divider(color = Color(0xFF2C3529))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            SelectionContainer {
+                                RenderMarkdownText(text = consistencyText)
+                            }
+                        }
+                    }
+
+                    // ACCIONES DE APROBACIÓN
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.resetStoryboardWorkflow() },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                        ) {
+                            Text("❌ Rechazar", fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { viewModel.approveStoryboardAndLaunchProduction() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                            modifier = Modifier
+                                .weight(1.5f)
+                                .height(44.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Check, contentDescription = "Aprobar", tint = Color.Black)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Aprobar y Lanzar Producción", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            "APPROVED" -> {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131A14)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFF4CAF50)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🚀", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "STORYBOARD EN PRODUCCIÓN ACTIVA",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF4CAF50),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Button(
+                                onClick = { viewModel.resetStoryboardWorkflow() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text("Re-diseñar Base", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "La idea de corto '$ideaText' de $durationText ha sido aprobada oficialmente bajo el sello de consistencia del director de escena. Los subagentes subsiguientes están orquestándose activamente y grabando folios en el expediente inferior.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.LightGray
+                        )
+                    }
+                }
+            }
+        }
+
         // TARJETA DE EXPEDIENTE CENTRAL
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -1350,7 +1858,7 @@ fun UnifiedBibliaPane(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Tu Biblia está vacía. Ve al taller de orquestación, selecciona un subagente y presiona 'Orquestar' para guardar folios en la base de datos.",
+                    text = "Tu Biblia está vacía. Ve al taller de orquestación o aprueba un storyboard para acumular folios en la base de datos.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.Gray,
                     textAlign = TextAlign.Center
