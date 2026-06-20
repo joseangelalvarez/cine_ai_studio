@@ -5,16 +5,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.data.api.RetrofitClient
-import com.example.data.database.AppDatabase
-import com.example.data.database.MovieProject
-import com.example.data.database.MovieProjectRepository
-import com.example.data.database.ProjectMemory
+import com.example.application.usecase.*
+import com.example.data.database.*
 import com.example.data.model.CinemaSubagent
 import com.example.data.model.CinemaSubagentsCatalog
+import com.example.infrastructure.gateway.SecureCinemaGatewayImpl
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,6 +28,22 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
 
     private val database = AppDatabase.getDatabase(application)
     private val repository = MovieProjectRepository(database.movieProjectDao())
+
+    // --- SECURE GATEWAY ADAPTER AND USE CASES (CLEAN ARCHITECTURE) ---
+    private val gateway = SecureCinemaGatewayImpl()
+
+    private val createStoryboardUseCase = CreateStoryboardUseCase(repository, gateway)
+    private val approveStoryboardUseCase = ApproveStoryboardUseCase(repository)
+    private val orchestrateSubagentUseCase = OrchestrateSubagentUseCase(repository, gateway)
+
+    // Toggle de Pasarela de Seguridad de Orquestador Central (Fase 0)
+    private val _useSecureGateway = MutableStateFlow(false)
+    val useSecureGateway: StateFlow<Boolean> = _useSecureGateway.asStateFlow()
+
+    fun toggleSecureGateway(enabled: Boolean) {
+        _useSecureGateway.value = enabled
+        gateway.useSecureBackendEndpoint = enabled
+    }
 
     // Proyectos de cine
     val allProjects: StateFlow<List<MovieProject>> = repository.allProjects
@@ -50,6 +64,37 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // --- OBSERBILIDAD REACTIVA DEL PRODUCTO (Fases 1 y 2) ---
+    val projectRevisions: StateFlow<List<ProjectMemoryRevision>> = _selectedProject
+        .flatMapLatest { project ->
+            if (project != null) {
+                repository.getRevisionsForProject(project.id)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val auditLogs: StateFlow<List<AuditLog>> = _selectedProject
+        .flatMapLatest { project ->
+            if (project != null) {
+                repository.getAuditLogsForProject(project.id)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val telemetryMetrics: StateFlow<List<TelemetryMetric>> = _selectedProject
+        .flatMapLatest { project ->
+            if (project != null) {
+                repository.getTelemetryMetricsForProject(project.id)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Subagente seleccionado de los 24
     private val _selectedSubagent = MutableStateFlow<CinemaSubagent?>(CinemaSubagentsCatalog.list.firstOrNull())
     val selectedSubagent: StateFlow<CinemaSubagent?> = _selectedSubagent.asStateFlow()
@@ -59,7 +104,7 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
     val subagentStates: StateFlow<Map<String, String>> = _subagentStates.asStateFlow()
 
     // Variable coroutine para control de la cascada
-    private var cascadeJob: kotlinx.coroutines.Job? = null
+    private var cascadeJob: Job? = null
 
     // Input del usuario en la consola de orquestación
     private val _promptInput = MutableStateFlow("")
@@ -190,137 +235,80 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
         _storyboardWorkflowError.value = ""
 
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // 1. Generar la Estructura en 3 Actos (Presentación, Desarrollo, Desenlace)
-                val actsPrompt = """
-                    Idea Base del Cortometraje: "$idea"
-                    Pautas: Estructura una propuesta de desarrollo cinematográfico formal dividida estrictamente en 3 actos:
-                    1. ACTO I: PRESENTACIÓN (Planteamiento e incidente incitador).
-                    2. ACTO II: DESARROLLO (Confrontación, obstáculos progresivos, punto de no retorno).
-                    3. ACTO III: FINAL (Clímax tenso y resolución/desenlace dramático).
-                    
-                    Escribe esto en un formato detallado, con lenguaje cinematográfico y directo, sin saludos ni introducciones genéricas.
-                """.trimIndent()
-
-                val actsResult = RetrofitClient.generateTaskContent(
-                    model = "gemini-3.5-flash",
-                    prompt = actsPrompt,
-                    systemInstructionText = "Eres el Showrunner y Diseñador Narrativo Principal del estudio cinematográfico IA. Tu trabajo es estructurar ideas brutas en estructuras clásicas de 3 actos de increíble fuerza dramática."
-                )
-
-                if (actsResult.startsWith("Network Error") || actsResult.startsWith("API Key Error")) {
-                    throw Exception(actsResult)
+            val result = createStoryboardUseCase.execute(
+                projectId = project.id,
+                artStyle = project.artStyle,
+                idea = idea,
+                duration = duration,
+                onProgressUpdate = { progressText ->
+                    // Forzar reactividad del mensaje en el State del flujo temporal de errores de UI
+                    viewModelScope.launch(Dispatchers.Main) {
+                        _storyboardWorkflowError.value = progressText
+                    }
                 }
+            )
 
-                _actsStructure.value = actsResult
-                repository.insertMemory(
-                    ProjectMemory(
-                        projectId = project.id,
-                        key = "STORYBOARD_WORKFLOW_ACTS",
-                        title = "3 Actos",
-                        content = actsResult
-                    )
-                )
+            withContext(Dispatchers.Main) {
+                when (result) {
+                    is StoryboardResult.Success -> {
+                        _actsStructure.value = result.acts
+                        _generatedStoryboard.value = result.storyboard
+                        _directorConsistencyReport.value = result.consistency
+                        _storyboardWorkflowState.value = "AWAITING_APPROVAL"
+                        _storyboardWorkflowError.value = ""
 
-                // 2. Generar el Storyboard/Tomas correspondientes al Tiempo/Duración del Corto
-                val storyboardPrompt = """
-                    Idea Base del Cortometraje: "$idea"
-                    Estilo Visual del Proyecto: "${project.artStyle}"
-                    Duración Estimada del Corto: "$duration"
-                    Estructura en 3 Actos:
-                    $actsResult
-                    
-                    Pautas: Genera un Storyboard Técnico y Desglose de Tomas sumamente detallado que encaje de manera estricta y lógica dentro de la duración técnica de $duration.
-                    Divide el storyboard en tomas secuenciales consecutivas (ej: Toma 1, Toma 2, Toma 3...).
-                    Para cada toma, debes especificar de forma obligatoria:
-                    - ID de la Toma (N° correlativo).
-                    - Tipo de Plano (ej: Primer plano, Plano general, Plano holandés...) y Angulación.
-                    - Movimiento de cámara (ej: Paneo lento, Steady-cam, Tilt...).
-                    - Descripción visual detallada de la acción (acciones, posiciones del personaje en escena).
-                    - Sonido / Diálogos / Efectos de audio (foley o música de fondo para cada toma).
-                    
-                    Garantiza que la progresión de tomas explique de forma impecable y rica de principio a fin los tres actos establecidos previamente.
-                """.trimIndent()
-
-                val storyboardResult = RetrofitClient.generateTaskContent(
-                    model = "gemini-3.5-flash",
-                    prompt = storyboardPrompt,
-                    systemInstructionText = "Eres el Guionista Cinematográfico y Diseñador de Storyboard Técnico. Dominas la sintaxis cinematográfica, encuadres, tipos de lentes, ritmo y continuidad."
-                )
-
-                if (storyboardResult.startsWith("Network Error") || storyboardResult.startsWith("API Key Error")) {
-                    throw Exception(storyboardResult)
+                        // Guardamos estados persistentes convencionales para mantener compatibilidad con lecturas
+                        saveConventionalWorkflowMemories(project.id, "AWAITING_APPROVAL", result.acts, result.storyboard, result.consistency)
+                    }
+                    is StoryboardResult.Error -> {
+                        _storyboardWorkflowState.value = "ERROR"
+                        _storyboardWorkflowError.value = result.message
+                        saveConventionalWorkflowMemories(project.id, "ERROR", "", "", "")
+                    }
                 }
-
-                _generatedStoryboard.value = storyboardResult
-                repository.insertMemory(
-                    ProjectMemory(
-                        projectId = project.id,
-                        key = "STORYBOARD_WORKFLOW_STORYBOARD",
-                        title = "Storyboard Técnico",
-                        content = storyboardResult
-                    )
-                )
-
-                // 3. Generar la Verificación de Consistencia Lógica por el Director de Escena
-                val consistencyPrompt = """
-                    Storyboard Técnico redactado por el Guionista:
-                    $storyboardResult
-                    
-                    Duración técnica elegida: "$duration"
-                    Pautas de análisis como Director:
-                    Analiza y garantiza de manera rigurosa la consistencia lógica de todo el storyboard. Debes auditar:
-                    1. Coherencia narrativa: ¿Se enlazan de manera fluida y fluida las tomas, o hay cortes incoherentes?
-                    2. Continuidad espacial y temporal (Raccord): Verificar posiciones de los elementos, tiempos dramáticos correspondientes a la duración de "$duration", y lógica del eje de miradas (ley de los 180 grados).
-                    3. Ritmo visual: ¿El número de tomas y su duración estimada coinciden con el tiempo global de "$duration"?
-                    4. Recomendaciones Directoriales de Consistencia: Si hay algún detalle menor que requiera un pulido estricto de animación o composición para evitar saltos ópticos.
-                    
-                    Emite tu veredicto con una estructura clara y un prestigioso "Sello de Consistencia de Dirección aprobado, listo para producción fílmica".
-                """.trimIndent()
-
-                val consistencyResult = RetrofitClient.generateTaskContent(
-                    model = "gemini-3.5-flash",
-                    prompt = consistencyPrompt,
-                    systemInstructionText = "Eres el Director Técnico y Supervisor de Continuidad (Script Supervisor). Tu única obsesión es la consistencia férrea, la ausencia total de errores de raccord (salto óptico) y la justificación narrativa de cada lente y corte."
-                )
-
-                if (consistencyResult.startsWith("Network Error") || consistencyResult.startsWith("API Key Error")) {
-                    throw Exception(consistencyResult)
-                }
-
-                _directorConsistencyReport.value = consistencyResult
-                repository.insertMemory(
-                    ProjectMemory(
-                        projectId = project.id,
-                        key = "STORYBOARD_WORKFLOW_CONSISTENCY",
-                        title = "Análisis de Consistencia del Director",
-                        content = consistencyResult
-                    )
-                )
-
-                _storyboardWorkflowState.value = "AWAITING_APPROVAL"
-                repository.insertMemory(
-                    ProjectMemory(
-                        projectId = project.id,
-                        key = "STORYBOARD_WORKFLOW_STATE",
-                        title = "Estado del Flujo",
-                        content = "AWAITING_APPROVAL"
-                    )
-                )
-
-            } catch (e: Exception) {
-                _storyboardWorkflowState.value = "ERROR"
-                _storyboardWorkflowError.value = e.localizedMessage ?: e.message ?: "Error desconocido"
-                repository.insertMemory(
-                    ProjectMemory(
-                        projectId = project.id,
-                        key = "STORYBOARD_WORKFLOW_STATE",
-                        title = "Estado del Flujo",
-                        content = "ERROR"
-                    )
-                )
             }
         }
+    }
+
+    private suspend fun saveConventionalWorkflowMemories(
+        projectId: Int,
+        state: String,
+        acts: String,
+        storyboard: String,
+        consistency: String
+    ) {
+        repository.insertMemory(
+            ProjectMemory(
+                projectId = projectId,
+                key = "STORYBOARD_WORKFLOW_STATE",
+                title = "Estado del Flujo",
+                content = state
+            )
+        )
+        repository.insertMemory(
+            ProjectMemory(
+                projectId = projectId,
+                key = "STORYBOARD_WORKFLOW_ACTS",
+                title = "3 Actos",
+                content = acts
+            )
+        )
+        repository.insertMemory(
+            ProjectMemory(
+                projectId = projectId,
+                key = "STORYBOARD_WORKFLOW_STORYBOARD",
+                title = "Storyboard Técnico",
+                content = storyboard
+            )
+        )
+        repository.insertMemory(
+            ProjectMemory(
+                projectId = projectId,
+                key = "STORYBOARD_WORKFLOW_CONSISTENCY",
+                title = "Análisis de Consistencia del Director",
+                content = consistency
+            )
+        )
     }
 
     /**
@@ -330,6 +318,7 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
     fun approveStoryboardAndLaunchProduction() {
         val project = _selectedProject.value ?: return
         val idea = _videoIdeaState.value
+        val duration = _shortFilmDuration.value
         val acts = _actsStructure.value
         val storyboard = _generatedStoryboard.value
         val consistency = _directorConsistencyReport.value
@@ -337,63 +326,26 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
         _storyboardWorkflowState.value = "APPROVED"
 
         viewModelScope.launch(Dispatchers.IO) {
-            repository.insertMemory(
-                ProjectMemory(
-                    projectId = project.id,
-                    key = "STORYBOARD_WORKFLOW_STATE",
-                    title = "Estado del Flujo",
-                    content = "APPROVED"
-                )
-            )
-
-            // Actualizamos la sinopsis extendida en el registro del proyecto real para reflejar la idea del video
-            val updatedProject = project.copy(description = idea)
-            repository.insertProject(updatedProject)
-            _selectedProject.value = updatedProject
-
-            // Almacenamos el libreto y el storyboard de manera oficial en la biblia del proyecto para que todos los demás subagentes lo lean
-            val projectBibleContent = """
-                PROYECTO: "${project.title}"
-                GÉNERO: ${project.genre}
-                ESTILO VISUAL GLOBAL: ${project.artStyle}
-                AUDIENCIA OBJETIVO: ${project.targetAudience}
-                DURACIÓN ADOPTADA DEL CORTO: ${_shortFilmDuration.value}
-                
-                HISTORIA CONSOLIDADA:
-                $idea
-                
-                ESTRUCTURA DE TRES ACTOS (APROBADA POR SHOWRUNNER):
-                $acts
-                
-                STORYBOARD Y DESGLOSE OFICIAL DE TOMAS LOGICAMENTE INTEGRADAS:
-                $storyboard
-                
-                DIRECTIVA SÓLIDA DE CONSISTENCIA DIRECTORIAL:
-                $consistency
-                
-                ESTADO FÍSICO DE LA PRODUCCIÓN:
-                Storyboard aprobado técnicamente en todas las capas. Se ha disparado la producción de material artístico y posproducción en cascada automática.
-            """.trimIndent()
-
-            val showrunnerBibleMemory = ProjectMemory(
+            val success = approveStoryboardUseCase.execute(
                 projectId = project.id,
-                key = "SHOWRUNNER",
-                title = "Showrunner Project Bible",
-                content = projectBibleContent
+                idea = idea,
+                duration = duration,
+                acts = acts,
+                storyboard = storyboard,
+                consistency = consistency
             )
-            repository.insertMemory(showrunnerBibleMemory)
 
-            // Inyectamos también el libreto en el departamento "GUIONISTA" para reflejar este paso formal terminado
-            val guionistaMemory = ProjectMemory(
-                projectId = project.id,
-                key = "GUIONISTA",
-                title = "Guionista Principal (Guion Literario)",
-                content = storyboard
-            )
-            repository.insertMemory(guionistaMemory)
+            if (success) {
+                // Actualizamos la sinopsis extendida en el registro del proyecto real para reflejar la idea del video en UI
+                val updatedProject = project.copy(description = idea)
+                repository.insertProject(updatedProject)
+                _selectedProject.value = updatedProject
 
-            // Activamos la cascada desde la siguiente capa lógica: DIRECTOR_ARTE para que cree el moodboard estético, hasta el final.
-            runCascadeOrchestration("DIRECTOR_ARTE")
+                withContext(Dispatchers.Main) {
+                    // Activamos la cascada desde la siguiente capa lógica: DIRECTOR_ARTE para que cree el moodboard estético, hasta el final.
+                    runCascadeOrchestration("DIRECTOR_ARTE")
+                }
+            }
         }
     }
 
@@ -405,41 +357,11 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
         _actsStructure.value = ""
         _generatedStoryboard.value = ""
         _directorConsistencyReport.value = ""
-        
+        _storyboardWorkflowError.value = ""
+
         val project = _selectedProject.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            repository.insertMemory(
-                ProjectMemory(
-                    projectId = project.id,
-                    key = "STORYBOARD_WORKFLOW_STATE",
-                    title = "Estado del Flujo",
-                    content = "IDLE"
-                )
-            )
-            repository.insertMemory(
-                ProjectMemory(
-                    projectId = project.id,
-                    key = "STORYBOARD_WORKFLOW_ACTS",
-                    title = "3 Actos",
-                    content = ""
-                )
-            )
-            repository.insertMemory(
-                ProjectMemory(
-                    projectId = project.id,
-                    key = "STORYBOARD_WORKFLOW_STORYBOARD",
-                    title = "Storyboard Técnico",
-                    content = ""
-                )
-            )
-            repository.insertMemory(
-                ProjectMemory(
-                    projectId = project.id,
-                    key = "STORYBOARD_WORKFLOW_CONSISTENCY",
-                    title = "Análisis de Consistencia del Director",
-                    content = ""
-                )
-            )
+            saveConventionalWorkflowMemories(project.id, "IDLE", "", "", "")
         }
     }
 
@@ -471,18 +393,17 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
             val projectId = repository.insertProject(project)
 
             // Pre-populamos la Capa 0 automáticamente: Showrunner Project Bible
-            val showrunnerAgent = CinemaSubagentsCatalog.list.first { it.key == "SHOWRUNNER" }
             val showrunnerBible = """
                 PROYECTO: "$title"
                 GÉNERO: $genre
                 ESTILO VISUAL: $artStyle
                 AUDIENCIA OBJETIVO: $targetAudience
                 
-                SINOPSIS GENERAL DE SINOPSIS:
+                SINOPSIS / IDEA CENTRAL DEL VIDEO:
                 $description
                 
                 ESTADO DE LA DIRECTIVA:
-                Este documento actúa como la Directiva General (Showrunner Bible) para guiar a todos los subagentes del estudio IA. Todos los entregables posteriores (Guion, Fotografía, Iluminación, Layout, Audio) deben amoldarse para mantener consistencia con los preceptos de esta directiva.
+                Este documento actúa como la Directiva General (Showrunner Bible) para guiar de manera centralizada a todos los subagentes del estudio IA. Todos los entregables posteriores se están re-orquestando de manera automática en base a esta dirección estética de producción.
             """.trimIndent()
 
             val initialMemory = ProjectMemory(
@@ -596,26 +517,28 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
                         agent.suggestedPrompt
                     }
 
-                    val success = executeSingleSubagentInPipeline(project, agent, promptToUse)
+                    // LLAMADA DESACOPLADA AL CONTRATO USE CASE (CLEAN ARCHITECTURE)
+                    val result = orchestrateSubagentUseCase.execute(project, agent, promptToUse)
 
                     val finalStates = _subagentStates.value.toMutableMap()
-                    if (success) {
-                        finalStates[agent.key] = "COMPLETED"
-                        
-                        // Si era el seleccionado, mostramos éxito en la consola actual
-                        if (_selectedSubagent.value?.key == agent.key) {
-                            val lastOutput = database.movieProjectDao()
-                                .getProjectMemoryByKey(project.id, agent.key)?.content ?: ""
-                            _generationState.value = GenerationState.Success(lastOutput)
+                    when (result) {
+                        is OrchestrationResult.Success -> {
+                            finalStates[agent.key] = "COMPLETED"
+                            
+                            // Si era el seleccionado, mostramos éxito en la consola actual
+                            if (_selectedSubagent.value?.key == agent.key) {
+                                _generationState.value = GenerationState.Success(result.content)
+                            }
                         }
-                    } else {
-                        finalStates[agent.key] = "ERROR"
-                        _subagentStates.value = finalStates
-                        
-                        if (_selectedSubagent.value?.key == agent.key) {
-                            _generationState.value = GenerationState.Error("Fallo al orquestar el departamento ${agent.name}")
+                        is OrchestrationResult.Error -> {
+                            finalStates[agent.key] = "ERROR"
+                            _subagentStates.value = finalStates
+                            
+                            if (_selectedSubagent.value?.key == agent.key) {
+                                _generationState.value = GenerationState.Error("Fallo al orquestar el departamento ${agent.name}: ${result.message}")
+                            }
+                            break // Aborta la cascada si algún nodo falla
                         }
-                        break // Aborta la cascada si algún nodo falla
                     }
                     _subagentStates.value = finalStates
 
@@ -625,83 +548,6 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
             } catch (e: Exception) {
                 _generationState.value = GenerationState.Error("Excepción en cascada: ${e.localizedMessage ?: e.message}")
             }
-        }
-    }
-
-    /**
-     * Ejecuta e integra un único subagente de manera síncrona en el hilo IO del pipeline,
-     * recolectando de manera reactiva la memoria compartida que haya acumulada en Room.
-     */
-    private suspend fun executeSingleSubagentInPipeline(
-        project: MovieProject,
-        subagent: CinemaSubagent,
-        currentPrompt: String
-    ): Boolean {
-        return try {
-            val accumulatedMemories = database.movieProjectDao().getMemoriesForProject(project.id).firstOrNull() ?: emptyList()
-            val memoriesStringBuilder = StringBuilder()
-
-            if (accumulatedMemories.isEmpty()) {
-                memoriesStringBuilder.append("(Aún no se han generado entregables por otros departamentos. Comienza la base literaria.)\n")
-            } else {
-                accumulatedMemories.forEach { memory ->
-                    if (memory.key != subagent.key) {
-                        memoriesStringBuilder.append("📄 [${memory.title.uppercase()}]:\n")
-                        memoriesStringBuilder.append("${memory.content}\n")
-                        memoriesStringBuilder.append("----------------------------\n\n")
-                    }
-                }
-            }
-
-            val systemInstruction = """
-                Eres un Agente de Inteligencia Artificial de Cine en el rol de: ${subagent.name} (${subagent.role}).
-                Formas parte del departamento: ${subagent.layer}.
-                
-                Tus funciones y contrato técnico que debes cumplir de manera estricta:
-                ${subagent.duties.joinToString("\n") { " - $it" }}
-                
-                DATOS DE PRODUCCIÓN DE LA PELÍCULA:
-                - Título: "${project.title}"
-                - Género: ${project.genre}
-                - Estilo Visual Global: ${project.artStyle}
-                - Sinopsis del Showrunner: ${project.description}
-                - Target de Audiencia: ${project.targetAudience}
-                
-                ========================================
-                MEMORIA CENTRAL COMPARTIDA DEL PROYECTO (Pre-requisitos y continuidad):
-                $memoriesStringBuilder
-                ========================================
-                
-                DESAFÍO EXIGIDO:
-                - Tu Entrada esperada es: ${subagent.inputDescription}
-                - Tu Salida obligatoria exigida es: ${subagent.outputDescription}
-                
-                INSTRUCCIÓN DE REDACCIÓN:
-                Escribe obligatoriamente en ESPAÑOL, de forma sumamente técnica, detallada, estructurada y profesional, usando terminología cinematográfica nativa real.
-                No agregues introducciones amables ni despedidas. Comienza directamente con los encabezados e informe técnico de tu entregable.
-            """.trimIndent()
-
-            val generatedContent = RetrofitClient.generateTaskContent(
-                model = "gemini-3.5-flash",
-                prompt = currentPrompt,
-                systemInstructionText = systemInstruction
-            )
-
-            if (generatedContent.startsWith("API Key Error") || generatedContent.startsWith("Network Error")) {
-                false
-            } else {
-                val memoryToSave = ProjectMemory(
-                    projectId = project.id,
-                    key = subagent.key,
-                    title = "${subagent.name} (${subagent.layer})",
-                    content = generatedContent,
-                    updatedAt = System.currentTimeMillis()
-                )
-                repository.insertMemory(memoryToSave)
-                true
-            }
-        } catch (e: Exception) {
-            false
         }
     }
 
@@ -745,7 +591,9 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
             repository.insertMemory(initialMemory)
 
             // Disparar cascada desde el guionista en adelante
-            runCascadeOrchestration("GUIONISTA")
+            withContext(Dispatchers.Main) {
+                runCascadeOrchestration("GUIONISTA")
+            }
         }
     }
 

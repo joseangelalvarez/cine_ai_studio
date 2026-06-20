@@ -310,7 +310,7 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
             }
         } else {
             // DISEÑO ADAPTIVO PORTÁTIL (COMPACT): Navegación por pestañas inferiores
-            var activeTabId by remember { mutableIntStateOf(0) } // 0: Estudio/Agentes, 1: Consola, 2: Biblia Central
+            var activeTabId by remember { mutableIntStateOf(0) } // 0: Estudio/Agentes, 1: Consola, 2: Biblia Central, 3: Métricas L5
 
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header superior minimalista con info del proyecto activo
@@ -365,6 +365,12 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
                                 onClearMemories = { viewModel.clearProjectBible() }
                             )
                         }
+                        3 -> {
+                            UnifiedObservabilityPane(
+                                viewModel = viewModel,
+                                project = project
+                            )
+                        }
                     }
                 }
 
@@ -395,6 +401,13 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
                         label = { Text("Biblia DB") },
                         icon = { Icon(Icons.Default.Info, contentDescription = "Pestaña Biblia") },
                         modifier = Modifier.testTag("nav_item_biblia")
+                    )
+                    NavigationBarItem(
+                        selected = activeTabId == 3,
+                        onClick = { activeTabId = 3 },
+                        label = { Text("Métricas L5") },
+                        icon = { Icon(Icons.Default.List, contentDescription = "Pestaña Observabilidad") },
+                        modifier = Modifier.testTag("nav_item_observabilidad")
                     )
                 }
             }
@@ -783,7 +796,7 @@ fun WorkstationSection(
     generationState: GenerationState,
     memories: List<ProjectMemory>
 ) {
-    var selectedTabId by remember { mutableIntStateOf(0) } // 0: Editor/Taller, 1: Memoria Central del Proyecto
+    var selectedTabId by remember { mutableIntStateOf(0) } // 0: Editor/Taller, 1: Memoria Central del Proyecto, 2: Métricas L5
 
     Column(modifier = Modifier.fillMaxSize()) {
         // TabRow de Trabajo
@@ -824,6 +837,22 @@ fun WorkstationSection(
                 },
                 modifier = Modifier.testTag("tab_workstation_biblia")
             )
+            Tab(
+                selected = selectedTabId == 2,
+                onClick = { selectedTabId = 2 },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.List, contentDescription = "Métricas L5", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "MÉTRICAS & TRAZAS L5",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                },
+                modifier = Modifier.testTag("tab_workstation_metrics")
+            )
         }
 
         Box(modifier = Modifier
@@ -845,6 +874,12 @@ fun WorkstationSection(
                         project = project,
                         memories = memories,
                         onClearMemories = { viewModel.clearProjectBible() }
+                    )
+                }
+                2 -> {
+                    UnifiedObservabilityPane(
+                        viewModel = viewModel,
+                        project = project
                     )
                 }
             }
@@ -2168,6 +2203,511 @@ fun CreateProjectDialog(
                         Text("Iniciar", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// CAPA DE OBSERVABILIDAD Y GOBERNANZA ARCHITECTÓNICA OBJETIVO (NIVEL 5)
+// =========================================================================
+
+@Composable
+fun UnifiedObservabilityPane(
+    viewModel: MovieProjectViewModel,
+    project: MovieProject
+) {
+    val revisions by viewModel.projectRevisions.collectAsStateWithLifecycle()
+    val auditLogs by viewModel.auditLogs.collectAsStateWithLifecycle()
+    val metrics by viewModel.telemetryMetrics.collectAsStateWithLifecycle()
+    val useSecureGateway by viewModel.useSecureGateway.collectAsStateWithLifecycle()
+
+    var selectedRevisionForDetail by remember { mutableStateOf<com.example.data.database.ProjectMemoryRevision?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        // --- SECCIÓN 1: CONTROL DE GOBERNANZA DE SEGURIDAD (FASE 0) ---
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "PASARELA CENTRALIZADA SEGURA (L5)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Evita la fuga de claves del cliente aislando las peticiones LLM a través de un backend dedicado.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = useSecureGateway,
+                        onCheckedChange = { viewModel.toggleSecureGateway(it) },
+                        modifier = Modifier.testTag("secure_gateway_switch")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            color = if (useSecureGateway) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                            } else {
+                                MaterialTheme.colorScheme.error.copy(alpha = 0.1f)
+                            },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = if (useSecureGateway) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                            } else {
+                                MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
+                            },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .padding(10.dp)
+                ) {
+                    Text(
+                        text = if (useSecureGateway) {
+                            "ESTADO: ACTIVO (Canal Seguro). No se expone ninguna credencial ni endpoint directo en este dispositivo cliente."
+                        } else {
+                            "ESTADO: ARENA DE DEPURACIÓN (Canal de Resiliencia). Las llamadas se procesan localmente aplicando retroceso y retardo exponencial."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (useSecureGateway) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        }
+                    )
+                }
+            }
+        }
+
+        // --- SECCIÓN 2: MÉTRICAS OPERATIVAS REAL-TIME (FASE 2) ---
+        Text(
+            text = "MÉTRICAS DE TELEMETRÍA (OPERATIVAS & FINANCIERAS)",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        // Cáculo de indicadores de rendimiento y coste
+        val totalCost = metrics.filter { it.metricName == "ESTIMATED_COST" }.sumOf { it.metricValue }
+        val stageMetricsLog = metrics.filter { it.metricName == "STAGE_TIME" }
+        val avgLatency = if (stageMetricsLog.isNotEmpty()) stageMetricsLog.map { it.metricValue }.average() else 0.0
+        val errorList = metrics.filter { it.metricName == "AI_ERROR_RATE" }
+        val errorRatioPercent = if (errorList.isNotEmpty()) {
+            (errorList.map { it.metricValue }.sum() / errorList.size) * 100.0
+        } else {
+            0.0
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Tarjeta Costo
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(90.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Costo Total", style = MaterialTheme.typography.labelSmall, color = Color.Gray, maxLines = 1)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = String.format("$%.5f", totalCost),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1
+                    )
+                    Text("USD", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                }
+            }
+
+            // Tarjeta Latencia Promedio
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(90.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Latencia AI", style = MaterialTheme.typography.labelSmall, color = Color.Gray, maxLines = 1)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = String.format("%.0f ms", avgLatency),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1
+                    )
+                    Text("por llamada", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                }
+            }
+
+            // Tarjeta Error Rate
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(90.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Tasa Error", style = MaterialTheme.typography.labelSmall, color = Color.Gray, maxLines = 1)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = String.format("%.1f %%", errorRatioPercent),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (errorRatioPercent > 30) Color.Red else Color.Green,
+                        maxLines = 1
+                    )
+                    Text("de fallos pipeline", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                }
+            }
+
+            // Tarjeta Versiones
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(90.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Versiones", style = MaterialTheme.typography.labelSmall, color = Color.Gray, maxLines = 1)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${revisions.size}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1
+                    )
+                    Text("biblias guardadas", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                }
+            }
+        }
+
+        // --- SECCIÓN 3: CONTROL DE HISTORIAL Y VERSIONES (FASE 1 - MEMORIA VERSIONADA) ---
+        Text(
+            text = "VERSIONES Y REVISIONES DEL DOCUMENTO (PROJECT BIBLE CHANGE-LOG)",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            if (revisions.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Ninguna revisión guardada en la base de datos para este proyecto todavía. Genera un storyboard o procesa agentes para registrar versiones históricas.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    revisions.forEach { rev ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedRevisionForDetail = rev }
+                                .padding(vertical = 10.dp, horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = "v${rev.version}",
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = rev.title,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = "Autor: ${rev.author} • ID: ${rev.correlationId}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Ver versión",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    }
+                }
+            }
+        }
+
+        // --- SECCIÓN 4: TRAZAS DE ARCHIVO AUDIT ELECTRÓNICO (FASE 2 - OBSERVABILIDAD EXTREMO A EXTREMO) ---
+        Text(
+            text = "REGISTROS CRONOLÓGICOS DE AUDITORÍA (AUDIT TRAILS)",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            if (auditLogs.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Historial vacío. Las acciones de los agentes generarán logs con firmas asíncronas automáticamente aquí.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                }
+            } else {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    auditLogs.take(50).forEach { log ->
+                        val dateText = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp))
+                        Column(modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = when (log.actor) {
+                                            "USER" -> Color(0xFF268DFF).copy(alpha = 0.15f)
+                                            "SYSTEM" -> Color(0xFFFF9800).copy(alpha = 0.15f)
+                                            else -> Color(0xFF00FFCC).copy(alpha = 0.15f)
+                                        },
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = " ${log.actor} ",
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = when (log.actor) {
+                                                "USER" -> Color(0xFF268DFF)
+                                                "SYSTEM" -> Color(0xFFFF4D4D)
+                                                else -> Color(0xFF00FFCC)
+                                            },
+                                            modifier = Modifier.padding(4.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = log.action,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                                Text(
+                                    text = dateText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.Gray
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = log.details,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.LightGray
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Correlation ID: ${log.correlationId}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.Gray,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+
+    // Modal de diálogo emergente de revisión histórica detallada de documentos
+    selectedRevisionForDetail?.let { revision ->
+        Dialog(onDismissRequest = { selectedRevisionForDetail = null }) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.85f),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Historial v${revision.version}",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(onClick = { selectedRevisionForDetail = null }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Cerrar modal", tint = Color.Gray)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = "Documento: ${revision.title}", style = MaterialTheme.typography.bodyMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(text = "Guardado por: ${revision.author} • Correlation ID: ${revision.correlationId}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    SecureBadge(useSecureGateway)
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    SelectionContainer(modifier = Modifier.weight(1f)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = revision.content,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.LightGray
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { selectedRevisionForDetail = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text("Aceptar", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SecureBadge(active: Boolean) {
+    if (active) {
+        Surface(
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+            shape = RoundedCornerShape(4.dp),
+            modifier = Modifier.padding(top = 4.dp)
+        ) {
+            Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = "Cerrado y Encriptado por Servidor Remoto (Pasarela L5)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    } else {
+        Surface(
+            color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+            shape = RoundedCornerShape(4.dp),
+            modifier = Modifier.padding(top = 4.dp)
+        ) {
+            Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(6.dp).background(MaterialTheme.colorScheme.error, androidx.compose.foundation.shape.CircleShape))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = "Aislado del Servidor (Capa Temporal del Teléfono)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
         }
     }
