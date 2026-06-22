@@ -12,7 +12,7 @@ class SecureCinemaGatewayImpl : CinemaGateway {
 
     // Flag de simulación del backend seguro Nivel 5 de producción.
     // Permite que la app opere aislada localmente o con Gateway central.
-    var useSecureBackendEndpoint: Boolean = false
+    var useSecureBackendEndpoint: Boolean = true
 
     override suspend fun executeAIRequest(
         projectId: Int,

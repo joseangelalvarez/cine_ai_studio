@@ -1,3 +1,18 @@
 <resources>
     <string name="app_name">Cine AI Studio</string>
+    <string name="home_title">CINE AI STUDIO</string>
+    <string name="home_subtitle">Estudio Cinematográfico de Orquestación con IA</string>
+    <string name="home_generate_short">GENERAR NUEVO CORTO DE IA</string>
+    <string name="home_generate_short_desc">Inicia un asistente de 3 pasos para definir el género, estilo visual, público objetivo y tu idea dramática. El sistema creará la Biblia de producción y el Storyboard inicial en un solo flujo integrado.</string>
+    <string name="home_open_existing">ABRIR PROYECTO EXISTENTE</string>
+    <string name="home_open_existing_desc">Retoma una producción de cine guardada localmente para expandir sus departamentos, supervisar ejecuciones de subagentes o revisar métricas operativas.</string>
+    <string name="home_no_projects">Aún no tienes cortometrajes guardados.</string>
+    <string name="wizard_title">GENERAR CORTO DE IA</string>
+    <string name="wizard_step">Paso %1$d de 3</string>
+    <string name="wizard_step1_title">1. Dirección Literaria y Estética</string>
+    <string name="wizard_step1_desc">Asigna un título y define la dirección de género y estilo estético para los directores de fotografía y arte.</string>
+    <string name="wizard_step2_title">2. Premisa Dramática y Audiencia</string>
+    <string name="wizard_step2_desc">Inserta la premisa o idea principal. Ésta servirá de base para que el Guionista de IA arme la escaleta en 3 actos.</string>
+    <string name="wizard_step3_title">3. Duración y Planificación de Storyboard</string>
+    <string name="wizard_step3_desc">Elige la duración objetivo del corto. El motor de IA dividirá la propuesta dramática en fragmentos técnicos adaptados a esta duración.</string>
 </resources>

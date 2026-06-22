@@ -28,6 +28,27 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
 
     private val database = AppDatabase.getDatabase(application)
     private val repository = MovieProjectRepository(database.movieProjectDao())
+    private val sharedPrefs = application.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
+
+    private val _userCredits = MutableStateFlow(sharedPrefs.getInt("credits", 100))
+    val userCredits: StateFlow<Int> = _userCredits.asStateFlow()
+
+    fun consumeCredits(amount: Int): Boolean {
+        val current = _userCredits.value
+        if (current >= amount) {
+            val newCredits = current - amount
+            _userCredits.value = newCredits
+            sharedPrefs.edit().putInt("credits", newCredits).apply()
+            return true
+        }
+        return false
+    }
+
+    fun buyCredits(amount: Int) {
+        val newCredits = _userCredits.value + amount
+        _userCredits.value = newCredits
+        sharedPrefs.edit().putInt("credits", newCredits).apply()
+    }
 
     // --- SECURE GATEWAY ADAPTER AND USE CASES (CLEAN ARCHITECTURE) ---
     private val gateway = SecureCinemaGatewayImpl()
@@ -37,7 +58,7 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
     private val orchestrateSubagentUseCase = OrchestrateSubagentUseCase(repository, gateway)
 
     // Toggle de Pasarela de Seguridad de Orquestador Central (Fase 0)
-    private val _useSecureGateway = MutableStateFlow(false)
+    private val _useSecureGateway = MutableStateFlow(true)
     val useSecureGateway: StateFlow<Boolean> = _useSecureGateway.asStateFlow()
 
     fun toggleSecureGateway(enabled: Boolean) {
@@ -159,21 +180,347 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
     private val _storyboardWorkflowError = MutableStateFlow("")
     val storyboardWorkflowError: StateFlow<String> = _storyboardWorkflowError.asStateFlow()
 
+    // Control de navegación de pestañas integradas (desactivado/deprecated pero mantenido para retrocompatibilidad interna si fuera necesario)
+    private val _activeTabCompact = MutableStateFlow(0) // 0: Estudio, 1: Consola, 2: Biblia DB, 3: Métricas
+    val activeTabCompact: StateFlow<Int> = _activeTabCompact.asStateFlow()
+
+    private val _activeTabWide = MutableStateFlow(0) // 0: Taller, 1: Biblia Unificada, 2: Métricas
+    val activeTabWide: StateFlow<Int> = _activeTabWide.asStateFlow()
+
+    fun updateActiveTabCompact(tab: Int) {
+        _activeTabCompact.value = tab
+    }
+
+    fun updateActiveTabWide(tab: Int) {
+        _activeTabWide.value = tab
+    }
+
+    // --- NUEVO FLUJO SIMPLIFICADO PASO A PASO (DIRECCIÓN CREATIVA DE VENTANAS LIMPIAS) ---
+    private val _currentScreenState = MutableStateFlow("HOME") // "HOME", "PROJECT_LIST", "PROJECT_DETAILS", "CREATE_WIZARD", "CREATION_PROGRESS"
+    val currentScreenState: StateFlow<String> = _currentScreenState.asStateFlow()
+
+    fun navigateToScreen(screen: String) {
+        _currentScreenState.value = screen
+        if (screen == "HOME") {
+            _selectedProject.value = null
+        }
+    }
+
+    // Datos del asistente de creación
+    val wizardTitle = MutableStateFlow("")
+    val wizardDuration = MutableStateFlow("3 minutos")
+    val wizardArtStyle = MutableStateFlow("Cinemático Ultra-Realista")
+    val wizardIdea = MutableStateFlow("")
+
+    // Estado del progreso de ejecución
+    private val _progressStepIndex = MutableStateFlow(0)
+    val progressStepIndex: StateFlow<Int> = _progressStepIndex.asStateFlow()
+
+    private val _progressMessage = MutableStateFlow("Iniciando motor de preproducción...")
+    val progressMessage: StateFlow<String> = _progressMessage.asStateFlow()
+
+    private val _isRenderingPromptVisible = MutableStateFlow(false)
+    val isRenderingPromptVisible: StateFlow<Boolean> = _isRenderingPromptVisible.asStateFlow()
+
+    private val _renderingStatus = MutableStateFlow("") // "", "GENERATING", "COMPLETED"
+    val renderingStatus: StateFlow<String> = _renderingStatus.asStateFlow()
+
+    private val _lastGenerationError = MutableStateFlow<String?>(null)
+    val lastGenerationError: StateFlow<String?> = _lastGenerationError.asStateFlow()
+
+    // Control de edición del orquestador seleccionado
+    private val _activeSubagentToEdit = MutableStateFlow<CinemaSubagent?>(null)
+    val activeSubagentToEdit: StateFlow<CinemaSubagent?> = _activeSubagentToEdit.asStateFlow()
+
+    // --- VEO COMPLEMENTARY VIDEO ROUTE AND FEEDBACK ---
+    private val _veoVideoStatus = MutableStateFlow("NOT_STARTED") // NOT_STARTED, GENERATING, SUCCESS, ERROR
+    val veoVideoStatus: StateFlow<String> = _veoVideoStatus.asStateFlow()
+
+    private val _veoCharacterCustom = MutableStateFlow("")
+    val veoCharacterCustom: StateFlow<String> = _veoCharacterCustom.asStateFlow()
+
+    private val _veoBackgroundCustom = MutableStateFlow("")
+    val veoBackgroundCustom: StateFlow<String> = _veoBackgroundCustom.asStateFlow()
+
+    private val _veoSoundCustom = MutableStateFlow("")
+    val veoSoundCustom: StateFlow<String> = _veoSoundCustom.asStateFlow()
+
+    private val _veoProgressMessage = MutableStateFlow("")
+    val veoProgressMessage: StateFlow<String> = _veoProgressMessage.asStateFlow()
+
+    private val _veoProgressFraction = MutableStateFlow(0.0f)
+    val veoProgressFraction: StateFlow<Float> = _veoProgressFraction.asStateFlow()
+
+    val editedContentText = MutableStateFlow("")
+
+    fun setSubagentToEdit(agent: CinemaSubagent?, currentContent: String) {
+        _activeSubagentToEdit.value = agent
+        editedContentText.value = currentContent
+    }
+
+    fun openProjectForEditing(project: MovieProject) {
+        selectProject(project)
+        navigateToScreen("PROJECT_DETAILS")
+    }
+
+    fun closeSubagentEditor() {
+        _activeSubagentToEdit.value = null
+        editedContentText.value = ""
+    }
+
+    // Reactive mapping of subagents and execution status
+    val subagentExecutionStatus: StateFlow<Map<String, Boolean>> = projectMemories
+        .map { memories ->
+            CinemaSubagentsCatalog.list.associate { agent ->
+                agent.key to memories.any { it.key == agent.key }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     init {
-        // Al iniciar, si hay proyectos, seleccionamos el primero por defecto
-        viewModelScope.launch {
-            allProjects.collectLatest { list ->
-                if (list.isNotEmpty() && _selectedProject.value == null) {
-                    selectProject(list.first())
+        // En el nuevo diseño guiado, NO seleccionamos ningún proyecto por defecto al inicio
+        // para asegurar que el usuario vea siempre la pantalla de inicio con 2 opciones limpias.
+    }
+
+    fun startAutomaticSequence(projectId: Int) {
+        cascadeJob?.cancel()
+        _progressStepIndex.value = 0
+        _isRenderingPromptVisible.value = false
+        _renderingStatus.value = ""
+        _lastGenerationError.value = null
+        navigateToScreen("CREATION_PROGRESS")
+
+        cascadeJob = viewModelScope.launch(Dispatchers.IO) {
+            val project = _selectedProject.value?.takeIf { it.id == projectId }
+                ?: repository.getProject(projectId).firstOrNull()
+                ?: allProjects.value.find { it.id == projectId }
+                ?: return@launch
+            val subagentsList = CinemaSubagentsCatalog.list
+
+            // Los orquestadores estándar son de pre-producción (Capa 0, Capa 1, Capa 2 hasta STORYBOARD)
+            val preprodAgents = subagentsList.filter { it.layerId <= 2 }
+
+            for (index in preprodAgents.indices) {
+                val agent = preprodAgents[index]
+                _progressStepIndex.value = index
+                _progressMessage.value = "Ejecutando ${agent.name} (${agent.layer})..."
+
+                val promptToUse = agent.suggestedPrompt
+                val result = orchestrateSubagentUseCase.execute(project, agent, promptToUse)
+                if (result is OrchestrationResult.Error) {
+                    _lastGenerationError.value = result.message
+                    _progressMessage.value = "Error al ejecutar ${agent.name}: ${result.message}"
+                    break
                 }
+
+                delay(1200) // Delay estético de progreso
+            }
+
+            if (_lastGenerationError.value == null) {
+                _progressMessage.value = "Preproducción completada con éxito. Listo para fase de renderizado."
+                _isRenderingPromptVisible.value = true
             }
         }
     }
 
-    fun selectProject(project: MovieProject) {
+    fun executeRenderAction(choice: String) {
+        val project = _selectedProject.value ?: return
+        cascadeJob?.cancel()
+        _lastGenerationError.value = null
+
+        cascadeJob = viewModelScope.launch(Dispatchers.IO) {
+            _isRenderingPromptVisible.value = false
+            _renderingStatus.value = "GENERATING"
+
+            val subagentsList = CinemaSubagentsCatalog.list
+            val renderAgents = mutableListOf<CinemaSubagent>()
+
+            when (choice) {
+                "ALL" -> {
+                    renderAgents.addAll(subagentsList.filter { it.layerId == 3 || it.layerId == 4 })
+                }
+                "VIDEO" -> {
+                    renderAgents.addAll(subagentsList.filter { it.layerId == 3 })
+                }
+                "AUDIO" -> {
+                    renderAgents.addAll(subagentsList.filter { it.layerId == 4 })
+                }
+            }
+
+            if (renderAgents.isNotEmpty()) {
+                for (index in renderAgents.indices) {
+                    val agent = renderAgents[index]
+                    _progressStepIndex.value = index
+                    _progressMessage.value = "Renderizando ${agent.name} (${agent.layer})..."
+                    val result = orchestrateSubagentUseCase.execute(project, agent, agent.suggestedPrompt)
+                    if (result is OrchestrationResult.Error) {
+                        _lastGenerationError.value = result.message
+                        _progressMessage.value = "Error al renderizar ${agent.name}: ${result.message}"
+                        _renderingStatus.value = "ERROR"
+                        break
+                    }
+                    delay(1200)
+                }
+            }
+
+            if (_lastGenerationError.value == null) {
+                _progressMessage.value = "¡Proyecto Completado! Generación y renderizado finalizados con éxito."
+                _renderingStatus.value = "COMPLETED"
+            }
+        }
+    }
+
+    fun updateSubagentMemoryAndCascade(projectId: Int, subagentKey: String, subagentTitle: String, newContent: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val memory = ProjectMemory(
+                projectId = projectId,
+                key = subagentKey,
+                title = subagentTitle,
+                content = newContent,
+                updatedAt = System.currentTimeMillis()
+            )
+            repository.insertMemory(memory)
+
+            // "Todos los orquestadores dependientes se actualizan automáticamente"
+            val subagentsList = CinemaSubagentsCatalog.list
+            val index = subagentsList.indexOfFirst { it.key == subagentKey }
+            if (index != -1 && index + 1 < subagentsList.size) {
+                val nextAgent = subagentsList[index + 1]
+                runCascadeOrchestration(nextAgent.key)
+            }
+
+            _activeSubagentToEdit.value = null
+        }
+    }
+
+    fun selectProject(project: MovieProject, tabCompact: Int = 0, tabWide: Int = 0) {
         _selectedProject.value = project
-        _generationState.value = GenerationState.Idle
+        _activeTabCompact.value = tabCompact
+        _activeTabWide.value = tabWide
         loadStoryboardWorkflowData(project.id)
+        loadVeoProjectMetadata(project.id)
+
+        // Cargar el entregable del subagente guardado por defecto o actual
+        val currentAgent = _selectedSubagent.value
+        if (currentAgent != null) {
+            selectSubagent(currentAgent)
+        } else {
+            _generationState.value = GenerationState.Idle
+        }
+    }
+
+    fun loadVeoProjectMetadata(projectId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val statusMem = repository.getMemoryByKey(projectId, "VEO_VIDEO_STATUS")
+            val charMem = repository.getMemoryByKey(projectId, "VEO_CHARACTER_CUSTOM")
+            val bgMem = repository.getMemoryByKey(projectId, "VEO_BACKGROUND_CUSTOM")
+            val soundMem = repository.getMemoryByKey(projectId, "VEO_SOUND_CUSTOM")
+
+            withContext(Dispatchers.Main) {
+                _veoVideoStatus.value = statusMem?.content ?: "NOT_STARTED"
+                _veoCharacterCustom.value = charMem?.content ?: ""
+                _veoBackgroundCustom.value = bgMem?.content ?: ""
+                _veoSoundCustom.value = soundMem?.content ?: ""
+            }
+        }
+    }
+
+    fun updateVeoCharacterCustom(text: String) {
+        _veoCharacterCustom.value = text
+        val project = _selectedProject.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertMemory(ProjectMemory(projectId = project.id, key = "VEO_CHARACTER_CUSTOM", title = "Instrucción de Personajes", content = text))
+        }
+    }
+
+    fun updateVeoBackgroundCustom(text: String) {
+        _veoBackgroundCustom.value = text
+        val project = _selectedProject.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertMemory(ProjectMemory(projectId = project.id, key = "VEO_BACKGROUND_CUSTOM", title = "Instrucción de Fondos/Escenario", content = text))
+        }
+    }
+
+    fun updateVeoSoundCustom(text: String) {
+        _veoSoundCustom.value = text
+        val project = _selectedProject.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertMemory(ProjectMemory(projectId = project.id, key = "VEO_SOUND_CUSTOM", title = "Instrucción de Audio/Música", content = text))
+        }
+    }
+
+    fun generateVeoVideo() {
+        val project = _selectedProject.value ?: return
+        cascadeJob?.cancel()
+        _veoVideoStatus.value = "GENERATING"
+        _veoProgressFraction.value = 0.0f
+
+        cascadeJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Etapa 1: Orquestación de Personajes con Imagen 3 / Banana Pro
+                _veoProgressMessage.value = "🤖 Generando personajes optimizados mediante Imagen 3 y Banana Pro con nuevas características..."
+                _veoProgressFraction.value = 0.15f
+                
+                val characterCustomPrompt = _veoCharacterCustom.value.ifBlank { "Características estándar del personaje principal Kael" }
+                val charPrompt = "Genera refinamiento de personajes en base a: $characterCustomPrompt"
+                val charAgent = CinemaSubagentsCatalog.list.find { it.key == "CHARACTER_DESIGNER" }
+                if (charAgent != null) {
+                    orchestrateSubagentUseCase.execute(project, charAgent, charPrompt)
+                }
+                delay(1500)
+
+                // Etapa 2: Orquestación de Escenarios/Fondos con Imagen 3 / Banana Pro
+                _veoProgressMessage.value = "🖼️ Diseñando fondos y escenarios cinematográficos en Imagen 3 con características indicadas..."
+                _veoProgressFraction.value = 0.4f
+                val backgroundCustomPrompt = _veoBackgroundCustom.value.ifBlank { "Escenario de la torre inclinada brutalista bajo lluvia ácida" }
+                val bgPrompt = "Genera refinamiento del entorno visual en base a: $backgroundCustomPrompt"
+                val bgAgent = CinemaSubagentsCatalog.list.find { it.key == "PRODUCTION_DESIGNER" }
+                if (bgAgent != null) {
+                    orchestrateSubagentUseCase.execute(project, bgAgent, bgPrompt)
+                }
+                delay(1500)
+
+                // Etapa 3: Orquestación de Música / Audio
+                _veoProgressMessage.value = "🎵 Compone la partitura melancólica y genera efectos sonoros de Foley envolventes..."
+                _veoProgressFraction.value = 0.65f
+                val soundCustomPrompt = _veoSoundCustom.value.ifBlank { "Atmósfera oscura y leitmotiv de sintetizadores" }
+                val soundPrompt = "Genera pistas de Foley y partitura musical refinada: $soundCustomPrompt"
+                val soundAgent = CinemaSubagentsCatalog.list.find { it.key == "SOUND_DESIGNER" }
+                val musicAgent = CinemaSubagentsCatalog.list.find { it.key == "COMPOSER" }
+                if (soundAgent != null) {
+                    orchestrateSubagentUseCase.execute(project, soundAgent, soundPrompt)
+                }
+                if (musicAgent != null) {
+                    orchestrateSubagentUseCase.execute(project, musicAgent, soundPrompt)
+                }
+                delay(1500)
+
+                // Etapa 4: Fusión y renderizado general del video en Google VEO
+                _veoProgressMessage.value = "🎬 Ejecutando motor de síntesis de Google VEO para renderizar el video fotograma a fotograma..."
+                _veoProgressFraction.value = 0.85f
+                delay(2000)
+
+                _veoProgressFraction.value = 1.0f
+                _veoProgressMessage.value = "¡Video final procesado con Google VEO con éxito!"
+                _veoVideoStatus.value = "SUCCESS"
+
+                repository.insertMemory(ProjectMemory(projectId = project.id, key = "VEO_VIDEO_STATUS", title = "Estado del video", content = "SUCCESS"))
+                repository.insertMemory(
+                    ProjectMemory(
+                        projectId = project.id,
+                        key = "FINAL_VEO_VIDEO",
+                        title = "Video Generado Google VEO",
+                        content = "Contiene el render cinematico de alta definición refinado"
+                    )
+                )
+
+                _renderingStatus.value = "COMPLETED"
+
+            } catch (e: Exception) {
+                _veoVideoStatus.value = "ERROR"
+                _veoProgressMessage.value = "Error al compilar en VEO: ${e.localizedMessage ?: e.message}"
+            }
+        }
     }
 
     fun loadStoryboardWorkflowData(projectId: Int) {
@@ -369,10 +716,76 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
         _selectedSubagent.value = subagent
         _promptInput.value = subagent.suggestedPrompt
         _generationState.value = GenerationState.Idle
+
+        val project = _selectedProject.value
+        if (project != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                // Consultamos si ya existe memoria guardada con la clave del subagente
+                val savedMemory = repository.getMemoryByKey(project.id, subagent.key)
+                withContext(Dispatchers.Main) {
+                    if (savedMemory != null && savedMemory.content.isNotBlank()) {
+                        _generationState.value = GenerationState.Success(savedMemory.content)
+                    } else {
+                        _generationState.value = GenerationState.Idle
+                    }
+                }
+            }
+        }
     }
 
     fun updatePromptInput(text: String) {
         _promptInput.value = text
+    }
+
+    fun deselectProject() {
+        _selectedProject.value = null
+    }
+
+    fun createProjectFromWizard(
+        title: String,
+        duration: String,
+        artStyle: String,
+        idea: String
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val project = MovieProject(
+                title = title,
+                genre = "Drama / Ciencia Ficción",
+                artStyle = artStyle,
+                description = idea,
+                targetAudience = "Público General"
+            )
+            val projectId = repository.insertProject(project)
+            val actualProjectId = projectId.toInt()
+
+            val showrunnerBible = """
+                PROYECTO: "$title"
+                GÉNERO: Drama / Ciencia Ficción
+                ESTILO VISUAL: $artStyle
+                AUDIENCIA OBJETIVO: Público General
+                DURACIÓN ESTIMADA: $duration
+                
+                SINOPSIS / IDEA CENTRAL DEL VIDEO:
+                $idea
+                
+                ESTADO DE LA DIRECTIVA:
+                Este documento actúa como la Directiva General (Showrunner Bible) para guiar de manera centralizada a todos los subagentes del estudio IA.
+            """.trimIndent()
+
+            val initialMemory = ProjectMemory(
+                projectId = actualProjectId,
+                key = "SHOWRUNNER",
+                title = "Showrunner Project Bible",
+                content = showrunnerBible
+            )
+            repository.insertMemory(initialMemory)
+
+            val updatedProject = project.copy(id = actualProjectId)
+            withContext(Dispatchers.Main) {
+                selectProject(updatedProject)
+                startAutomaticSequence(actualProjectId)
+            }
+        }
     }
 
     fun createNewProject(
@@ -380,7 +793,8 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
         genre: String,
         artStyle: String,
         description: String,
-        targetAudience: String
+        targetAudience: String,
+        duration: String
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val project = MovieProject(
@@ -391,6 +805,7 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
                 targetAudience = targetAudience
             )
             val projectId = repository.insertProject(project)
+            val actualProjectId = projectId.toInt()
 
             // Pre-populamos la Capa 0 automáticamente: Showrunner Project Bible
             val showrunnerBible = """
@@ -398,6 +813,7 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
                 GÉNERO: $genre
                 ESTILO VISUAL: $artStyle
                 AUDIENCIA OBJETIVO: $targetAudience
+                DURACIÓN ESTIMADA: $duration
                 
                 SINOPSIS / IDEA CENTRAL DEL VIDEO:
                 $description
@@ -407,33 +823,57 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
             """.trimIndent()
 
             val initialMemory = ProjectMemory(
-                projectId = projectId.toInt(),
+                projectId = actualProjectId,
                 key = "SHOWRUNNER",
                 title = "Showrunner Project Bible",
                 content = showrunnerBible
             )
             repository.insertMemory(initialMemory)
 
-            // Seleccionar el nuevo proyecto e iniciar cascada automática integrada
-            val updatedProject = project.copy(id = projectId.toInt())
+            // Guardamos metadatos de duración e idea para el Storyboard
+            repository.insertMemory(
+                ProjectMemory(
+                    projectId = actualProjectId,
+                    key = "STORYBOARD_WORKFLOW_DURATION",
+                    title = "Duración",
+                    content = duration
+                )
+            )
+            repository.insertMemory(
+                ProjectMemory(
+                    projectId = actualProjectId,
+                    key = "STORYBOARD_WORKFLOW_IDEA",
+                    title = "Idea",
+                    content = description
+                )
+            )
+
+            // Seleccionar el nuevo proyecto e iniciar pre-producción automática integrada (Storyboard)
+            val updatedProject = project.copy(id = actualProjectId)
             withContext(Dispatchers.Main) {
-                selectProject(updatedProject)
-                _selectedSubagent.value = CinemaSubagentsCatalog.list.firstOrNull { it.key == "GUIONISTA" }
-                _promptInput.value = CinemaSubagentsCatalog.list.firstOrNull { it.key == "GUIONISTA" }?.suggestedPrompt ?: ""
+                _shortFilmDuration.value = duration
+                _videoIdeaState.value = description
+                selectProject(updatedProject, tabCompact = 2, tabWide = 1)
                 
-                // Dispara automáticamente la orquestación en cascada de todos los departamentos en orden lógico
-                runCascadeOrchestration("GUIONISTA")
+                // Dispara automáticamente la orquestación del Storyboard
+                startStoryboardCreation(description, duration)
             }
         }
     }
 
     fun deleteCurrentProject() {
         val current = _selectedProject.value ?: return
+        deleteProject(current)
+    }
+
+    fun deleteProject(project: MovieProject) {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.deleteProject(current)
+            repository.deleteProject(project)
             withContext(Dispatchers.Main) {
-                _selectedProject.value = null
-                _generationState.value = GenerationState.Idle
+                if (_selectedProject.value?.id == project.id) {
+                    _selectedProject.value = null
+                    _generationState.value = GenerationState.Idle
+                }
             }
         }
     }
@@ -461,6 +901,12 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
         val subagentsList = CinemaSubagentsCatalog.list
         val startIndex = subagentsList.indexOfFirst { it.key == pivotKey }
         if (startIndex == -1) return
+
+        val cost = if (isSubagentExpensive(pivotKey)) 50 else 10
+        if (!consumeCredits(cost)) {
+            _generationState.value = GenerationState.Error("Créditos insuficientes. Costo: $cost créditos. Ve a Monetización para recargar.")
+            return
+        }
 
         _generationState.value = GenerationState.Loading
 

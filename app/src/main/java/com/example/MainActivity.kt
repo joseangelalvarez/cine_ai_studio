@@ -1,9 +1,12 @@
 package com.example
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.ui.draw.clip
+import kotlinx.coroutines.delay
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -119,54 +122,146 @@ fun StatusPulseDot() {
 
 @Composable
 fun CineStudioApp(viewModel: MovieProjectViewModel) {
+    val currentScreenState by viewModel.currentScreenState.collectAsStateWithLifecycle()
     val projects by viewModel.allProjects.collectAsStateWithLifecycle()
     val selectedProject by viewModel.selectedProject.collectAsStateWithLifecycle()
-    val isCreatingProjectDialogVisible by viewModel.isCreatingProjectDialogVisible.collectAsStateWithLifecycle()
+    val activeSubagentToEdit by viewModel.activeSubagentToEdit.collectAsStateWithLifecycle()
+    val editedContentText by viewModel.editedContentText.collectAsStateWithLifecycle()
+    val subagentExecutionStatus by viewModel.subagentExecutionStatus.collectAsStateWithLifecycle()
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (projects.isEmpty()) {
-            EmptyStudioScreen(onCreateProjectClick = {
-                viewModel.isCreatingProjectDialogVisible.value = true
-            })
-        } else {
-            selectedProject?.let { project ->
-                CineStudioMainContent(viewModel = viewModel, project = project)
-            } ?: Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+    val wizardTitle by viewModel.wizardTitle.collectAsStateWithLifecycle()
+    val wizardDuration by viewModel.wizardDuration.collectAsStateWithLifecycle()
+    val wizardArtStyle by viewModel.wizardArtStyle.collectAsStateWithLifecycle()
+    val wizardIdea by viewModel.wizardIdea.collectAsStateWithLifecycle()
+
+    val progressStepIndex by viewModel.progressStepIndex.collectAsStateWithLifecycle()
+    val progressMessage by viewModel.progressMessage.collectAsStateWithLifecycle()
+    val isRenderingPromptVisible by viewModel.isRenderingPromptVisible.collectAsStateWithLifecycle()
+    val renderingStatus by viewModel.renderingStatus.collectAsStateWithLifecycle()
+
+    val projectMemories by viewModel.projectMemories.collectAsStateWithLifecycle()
+    val useSecureGateway by viewModel.useSecureGateway.collectAsStateWithLifecycle()
+    val lastGenerationError by viewModel.lastGenerationError.collectAsStateWithLifecycle()
+
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        when (currentScreenState) {
+            "HOME" -> {
+                SimplifiedHomeScreen(
+                    onCreateProjectClick = {
+                        viewModel.wizardTitle.value = ""
+                        viewModel.wizardDuration.value = "3 minutos"
+                        viewModel.wizardArtStyle.value = "Cinemático Ultra-Realista"
+                        viewModel.wizardIdea.value = ""
+                        viewModel.navigateToScreen("CREATE_WIZARD_STEP1")
+                    },
+                    onOpenProjectsClick = { viewModel.navigateToScreen("PROJECT_LIST") }
+                )
             }
-        }
-
-        // Diálogo para nuevo proyecto de cine
-        if (isCreatingProjectDialogVisible) {
-            CreateProjectDialog(
-                onDismiss = { viewModel.isCreatingProjectDialogVisible.value = false },
-                onConfirm = { title, genre, artStyle, description, targetAudience ->
-                    viewModel.createNewProject(title, genre, artStyle, description, targetAudience)
-                    viewModel.isCreatingProjectDialogVisible.value = false
+            "CREATE_WIZARD_STEP1" -> {
+                CreateProjectWizardStep1(
+                    wizardTitle = wizardTitle,
+                    onTitleChange = { viewModel.wizardTitle.value = it },
+                    wizardDuration = wizardDuration,
+                    onDurationChange = { viewModel.wizardDuration.value = it },
+                    wizardArtStyle = wizardArtStyle,
+                    onArtStyleChange = { viewModel.wizardArtStyle.value = it },
+                    onBack = { viewModel.navigateToScreen("HOME") },
+                    onNext = { viewModel.navigateToScreen("CREATE_WIZARD_STEP2") }
+                )
+            }
+            "CREATE_WIZARD_STEP2" -> {
+                CreateProjectWizardStep2(
+                    wizardIdea = wizardIdea,
+                    onIdeaChange = { viewModel.wizardIdea.value = it },
+                    useSecureGateway = useSecureGateway,
+                    onToggleSecureGateway = { viewModel.toggleSecureGateway(it) },
+                    onBack = { viewModel.navigateToScreen("CREATE_WIZARD_STEP1") },
+                    onStartGeneration = {
+                        viewModel.createProjectFromWizard(
+                            title = wizardTitle,
+                            duration = wizardDuration,
+                            artStyle = wizardArtStyle,
+                            idea = wizardIdea
+                        )
+                    }
+                )
+            }
+            "CREATION_PROGRESS" -> {
+                CreationProgressScreen(
+                    project = selectedProject,
+                    progressStepIndex = progressStepIndex,
+                    progressMessage = progressMessage,
+                    isRenderingPromptVisible = isRenderingPromptVisible,
+                    renderingStatus = renderingStatus,
+                    lastGenerationError = lastGenerationError,
+                    useSecureGateway = useSecureGateway,
+                    onToggleSecureGateway = { viewModel.toggleSecureGateway(it) },
+                    onRetry = {
+                        selectedProject?.let { p ->
+                            viewModel.startAutomaticSequence(p.id)
+                        }
+                    },
+                    onRenderActionSelected = { choice -> viewModel.executeRenderAction(choice) },
+                    onGoToProject = { viewModel.navigateToScreen("PROJECT_DETAILS") }
+                )
+            }
+            "PROJECT_LIST" -> {
+                SimplifiedProjectListScreen(
+                    projects = projects,
+                    onBackClick = { viewModel.navigateToScreen("HOME") },
+                    onEditProject = { viewModel.openProjectForEditing(it) },
+                    onDeleteProject = { viewModel.deleteProject(it) }
+                )
+            }
+            "PROJECT_DETAILS" -> {
+                if (activeSubagentToEdit != null) {
+                    OrchestratorContentEditor(
+                        agent = activeSubagentToEdit!!,
+                        initialContent = editedContentText,
+                        onBack = { viewModel.closeSubagentEditor() },
+                        onUpdate = { key, title, newContent ->
+                            selectedProject?.let { p ->
+                                viewModel.updateSubagentMemoryAndCascade(
+                                    projectId = p.id,
+                                    subagentKey = key,
+                                    subagentTitle = title,
+                                    newContent = newContent
+                                )
+                            }
+                        }
+                    )
+                } else {
+                    SimplifiedProjectDetailsScreen(
+                        project = selectedProject!!,
+                        viewModel = viewModel,
+                        onBackClick = { viewModel.navigateToScreen("PROJECT_LIST") },
+                        onEditSubagent = { agent, currentContent ->
+                            viewModel.setSubagentToEdit(agent, currentContent)
+                        }
+                    )
                 }
-            )
+            }
         }
     }
 }
 
 @Composable
-fun EmptyStudioScreen(onCreateProjectClick: () -> Unit) {
+fun SimplifiedHomeScreen(
+    onCreateProjectClick: () -> Unit,
+    onOpenProjectsClick: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp)
+            .padding(24.dp)
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Icono estético de Claqueta / Cámara
         Surface(
-            modifier = Modifier.size(90.dp),
+            modifier = Modifier.size(100.dp),
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
             border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -174,7 +269,7 @@ fun EmptyStudioScreen(onCreateProjectClick: () -> Unit) {
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Cine AI Studio Icon",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(45.dp)
+                    modifier = Modifier.size(50.dp)
                 )
             }
         }
@@ -183,56 +278,1828 @@ fun EmptyStudioScreen(onCreateProjectClick: () -> Unit) {
 
         Text(
             text = "CINE AI STUDIO",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text(
-            text = "Orquestador de Cine con Subagentes de IA Especializados",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground,
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Black,
+            color = Color.White,
             textAlign = TextAlign.Center
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Organiza tu producción por capas cinematográficas, desde el Guion y la Fotografía hasta el Diseño de Sonido. Cada departamento tiene un subagente dedicado con contrato claro y memoria unificada integrada por Room DB.",
+            text = "Escribe tus ideas cinematográficas. Deja que los orquestadores de IA se encarguen de la preproducción y renderizado.",
             style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF9EA0A5),
+            color = com.example.ui.theme.GrayText,
             textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 480.dp)
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 500.dp)
+                .clickable { onCreateProjectClick() }
+                .testTag("home_generate_short_button"),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Crear nuevo",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Crear nuevo proyecto",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Configura tu título, estilo e idea base para una generación automatizada lineal rápida.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = com.example.ui.theme.GrayText,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 500.dp)
+                .clickable { onOpenProjectsClick() },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, com.example.ui.theme.ImmersiveBorder),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.List,
+                    contentDescription = "Abrir existente",
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Abrir proyecto existente",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Modifica, edita y consulta el pipeline de tus proyectos generados previamente.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = com.example.ui.theme.GrayText,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CreateProjectWizardStep1(
+    wizardTitle: String,
+    onTitleChange: (String) -> Unit,
+    wizardDuration: String,
+    onDurationChange: (String) -> Unit,
+    wizardArtStyle: String,
+    onArtStyleChange: (String) -> Unit,
+    onBack: () -> Unit,
+    onNext: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = "Nuevo Proyecto de Cine",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Paso 1 de 2: Datos iniciales",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = com.example.ui.theme.GrayText
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text(
+            text = "Título del proyecto",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = wizardTitle,
+            onValueChange = onTitleChange,
+            placeholder = { Text("Ej. El Último Operador") },
+            modifier = Modifier.fillMaxWidth().testTag("wizard_title_input"),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = com.example.ui.theme.ImmersiveBorder
+            )
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Duración aproximada",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        var showDurationDropdown by remember { mutableStateOf(false) }
+        Box(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = wizardDuration,
+                onValueChange = {},
+                readOnly = true,
+                modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    IconButton(onClick = { showDurationDropdown = true }) {
+                        Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = "Ver Duraciones", tint = Color.White)
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = com.example.ui.theme.ImmersiveBorder
+                )
+            )
+            DropdownMenu(
+                expanded = showDurationDropdown,
+                onDismissRequest = { showDurationDropdown = false }
+            ) {
+                listOf("1 minuto", "3 minutos", "5 minutos", "10 minutos").forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            onDurationChange(option)
+                            showDurationDropdown = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Estilo visual",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        var showStyleDropdown by remember { mutableStateOf(false) }
+        Box(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = wizardArtStyle,
+                onValueChange = {},
+                readOnly = true,
+                modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    IconButton(onClick = { showStyleDropdown = true }) {
+                        Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = "Ver Estilos", tint = Color.White)
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = com.example.ui.theme.ImmersiveBorder
+                )
+            )
+            DropdownMenu(
+                expanded = showStyleDropdown,
+                onDismissRequest = { showStyleDropdown = false }
+            ) {
+                listOf("Cinemático Ultra-Realista", "Ciencia Ficción Brutalista", "Anime Cyberpunk", "Fantasía Épica", "Noir de Autor").forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            onArtStyleChange(option)
+                            showStyleDropdown = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onNext,
+            enabled = wizardTitle.isNotBlank(),
+            modifier = Modifier.fillMaxWidth().height(52.dp).testTag("wizard_next_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text(text = "Siguiente", fontWeight = FontWeight.Bold, color = Color.Black)
+        }
+    }
+}
+
+@Composable
+fun CreateProjectWizardStep2(
+    wizardIdea: String,
+    onIdeaChange: (String) -> Unit,
+    useSecureGateway: Boolean,
+    onToggleSecureGateway: (Boolean) -> Unit,
+    onBack: () -> Unit,
+    onStartGeneration: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = "Nuevo Proyecto de Cine",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Paso 2 de 2: Idea del usuario",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = com.example.ui.theme.GrayText
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text(
+            text = "Idea base / Argumento principal",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Escribe resumidamente de qué tratará tu corto de IA. La IA generará y distribuirá automáticamente todas las tareas de preproducción.",
+            style = MaterialTheme.typography.bodySmall,
+            color = com.example.ui.theme.GrayText
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = wizardIdea,
+            onValueChange = onIdeaChange,
+            placeholder = { Text("Ej. Un astronauta de mantenimiento descubre una nave fantasma abandonada con un artefacto misterioso palpitando en su interior...") },
+            modifier = Modifier.fillMaxWidth().height(180.dp).testTag("wizard_idea_input"),
+            maxLines = 10,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = com.example.ui.theme.ImmersiveBorder
+            )
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Modo de Orquestación",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onToggleSecureGateway(false) },
+                colors = CardDefaults.cardColors(
+                    containerColor = if (!useSecureGateway) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(
+                    width = if (!useSecureGateway) 2.dp else 1.dp,
+                    color = if (!useSecureGateway) MaterialTheme.colorScheme.primary else com.example.ui.theme.ImmersiveBorder
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("IA Real", fontWeight = FontWeight.Bold, color = if (!useSecureGateway) MaterialTheme.colorScheme.primary else Color.White)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Genera guiones usando tu Clave API de Gemini.", style = MaterialTheme.typography.labelSmall, color = com.example.ui.theme.GrayText)
+                }
+            }
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onToggleSecureGateway(true) },
+                colors = CardDefaults.cardColors(
+                    containerColor = if (useSecureGateway) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(
+                    width = if (useSecureGateway) 2.dp else 1.dp,
+                    color = if (useSecureGateway) MaterialTheme.colorScheme.primary else com.example.ui.theme.ImmersiveBorder
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Ejecución Rápida Offline", fontWeight = FontWeight.Bold, color = if (useSecureGateway) MaterialTheme.colorScheme.primary else Color.White)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Sin costo de créditos. Usa documentos estructurados base localmente.", style = MaterialTheme.typography.labelSmall, color = com.example.ui.theme.GrayText)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onStartGeneration,
+            enabled = wizardIdea.isNotBlank(),
+            modifier = Modifier.fillMaxWidth().height(52.dp).testTag("wizard_generate_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text(text = "Comenzar Generación de IA", fontWeight = FontWeight.Bold, color = Color.Black)
+        }
+    }
+}
+
+@Composable
+fun CreationProgressScreen(
+    project: MovieProject?,
+    progressStepIndex: Int,
+    progressMessage: String,
+    isRenderingPromptVisible: Boolean,
+    renderingStatus: String,
+    lastGenerationError: String?,
+    useSecureGateway: Boolean,
+    onToggleSecureGateway: (Boolean) -> Unit,
+    onRetry: () -> Unit,
+    onRenderActionSelected: (String) -> Unit,
+    onGoToProject: () -> Unit
+) {
+    val totalPreprodSteps = 13.0f
+    val progressFraction = if (renderingStatus == "COMPLETED") {
+        1.0f
+    } else {
+        (progressStepIndex.toFloat() / totalPreprodSteps).coerceIn(0.0f, 1.0f)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (renderingStatus == "COMPLETED") {
+            Surface(
+                modifier = Modifier.size(90.dp),
+                shape = RoundedCornerShape(22.dp),
+                color = com.example.ui.theme.ImmersiveAccentGreen.copy(alpha = 0.15f),
+                border = BorderStroke(2.dp, com.example.ui.theme.ImmersiveAccentGreen)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Completado",
+                        tint = com.example.ui.theme.ImmersiveAccentGreen,
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "¡Proyecto Generado!",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Todos los orquestadores han completado sus entregables y la fase de renderizado se ha llevado a cabo con éxito.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = com.example.ui.theme.GrayText,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            Button(
+                onClick = onGoToProject,
+                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("progress_finish_button"),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(text = "Ver Proyecto", fontWeight = FontWeight.Bold, color = Color.Black)
+            }
+
+        } else {
+            if (lastGenerationError != null) {
+                Surface(
+                    modifier = Modifier.size(80.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.error)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Error de orquestación",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Generación Interrumpida",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "La orquestación de la IA se detuvo debido a un problema de configuración o conexión.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = com.example.ui.theme.GrayText,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Detalle técnico:",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = lastGenerationError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "👉 RECOVISIBILIDAD RESILIENTE (Modo Demo):",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Puedes activar el 'Modo Simulación Segura (L5)' para evitar llamadas API remotas reales y emular al instante la producción de los 13 departamentos sin claves.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                onToggleSecureGateway(true)
+                                onRetry()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                        ) {
+                            Text("Activar Simulación y Reintentar", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onGoToProject,
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    ) {
+                        Text("Ir al Proyecto (Incompleto)", color = Color.White)
+                    }
+                }
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        progress = progressFraction,
+                        modifier = Modifier.size(120.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 6.dp,
+                        trackColor = com.example.ui.theme.ImmersiveBorder
+                    )
+                    Text(
+                        text = "${(progressFraction * 100).toInt()}%",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Text(
+                    text = "Construyendo Corto de Cine...",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, com.example.ui.theme.ImmersiveBorder),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().widthIn(max = 450.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        StatusPulseDot()
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = progressMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                if (isRenderingPromptVisible) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "¿Deseas renderizar Video, Audio y Banda Sonora?",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Estas fases generan vídeo y audio cinematográficos, lo que requiere un mayor procesamiento cómputo.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = com.example.ui.theme.GrayText,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = { onRenderActionSelected("ALL") },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    modifier = Modifier.fillMaxWidth().height(44.dp).testTag("render_all_button")
+                                ) {
+                                    Text("Renderizar Todo", color = Color.Black, fontWeight = FontWeight.Bold)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = { onRenderActionSelected("VIDEO") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                        modifier = Modifier.weight(1f).height(44.dp)
+                                    ) {
+                                        Text("Solo Video", color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                    Button(
+                                        onClick = { onRenderActionSelected("AUDIO") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                        modifier = Modifier.weight(1f).height(44.dp)
+                                    ) {
+                                        Text("Solo Audio", color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = { onRenderActionSelected("NONE") },
+                                    border = BorderStroke(1.dp, Color.Gray),
+                                    modifier = Modifier.fillMaxWidth().height(44.dp)
+                                ) {
+                                    Text("Saltar esta fase", color = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SimplifiedProjectListScreen(
+    projects: List<MovieProject>,
+    onBackClick: () -> Unit,
+    onEditProject: (MovieProject) -> Unit,
+    onDeleteProject: (MovieProject) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onBackClick) {
+                Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Proyectos guardados",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (projects.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Aún no tienes ningún proyecto guardado.",
+                    color = com.example.ui.theme.GrayText,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(projects) { project ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, com.example.ui.theme.ImmersiveBorder),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = project.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Estilo: ${project.artStyle} • Género: ${project.genre}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = com.example.ui.theme.GrayText
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(
+                                    onClick = { onDeleteProject(project) },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFE53935))
+                                ) {
+                                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Eliminar", modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Eliminar", fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = { onEditProject(project) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    modifier = Modifier.height(40.dp).testTag("project_edit_button_${project.id}")
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Editar", tint = Color.Black, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Editar", color = Color.Black, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SimplifiedProjectDetailsScreen(
+    project: MovieProject,
+    viewModel: MovieProjectViewModel,
+    onBackClick: () -> Unit,
+    onEditSubagent: (CinemaSubagent, String) -> Unit
+) {
+    val executionStatus by viewModel.subagentExecutionStatus.collectAsStateWithLifecycle()
+    val projectMemories by viewModel.projectMemories.collectAsStateWithLifecycle()
+
+    val veoVideoStatus by viewModel.veoVideoStatus.collectAsStateWithLifecycle()
+    val veoCharacterCustom by viewModel.veoCharacterCustom.collectAsStateWithLifecycle()
+    val veoBackgroundCustom by viewModel.veoBackgroundCustom.collectAsStateWithLifecycle()
+    val veoSoundCustom by viewModel.veoSoundCustom.collectAsStateWithLifecycle()
+    val veoProgressMessage by viewModel.veoProgressMessage.collectAsStateWithLifecycle()
+    val veoProgressFraction by viewModel.veoProgressFraction.collectAsStateWithLifecycle()
+
+    var activeTab by remember { mutableStateOf(1) } // 0: Video Google VEO, 1: Orquestadores
+    var showSocialDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    if (showSocialDialog) {
+        AlertDialog(
+            onDismissRequest = { showSocialDialog = false },
+            title = { Text("Vincular Redes Sociales", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Introduce tus datos para publicar el proyecto generado directamente en tus cuentas.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(value = "", onValueChange = {}, label = { Text("YouTube Token / Channel ID") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = "", onValueChange = {}, label = { Text("TikTok Developer Key") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = "", onValueChange = {}, label = { Text("X (Twitter) OAuth Token") }, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                Button(onClick = { 
+                    showSocialDialog = false
+                    Toast.makeText(context, "Credenciales guardadas. Publicando video...", Toast.LENGTH_SHORT).show()
+                }) {
+                    Text("Guardar y Publicar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSocialDialog = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onBackClick) {
+                Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = project.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Estilo: ${project.artStyle}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = com.example.ui.theme.GrayText
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // TAB SWITCHER
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF1E293B), RoundedCornerShape(12.dp))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val selectedTabColor = MaterialTheme.colorScheme.primary
+            val unselectedTabColor = Color.Transparent
+            
+            Button(
+                onClick = { activeTab = 0 },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (activeTab == 0) selectedTabColor else unselectedTabColor,
+                    contentColor = if (activeTab == 0) Color.Black else Color.White
+                ),
+                modifier = Modifier.weight(1f).height(40.dp),
+                contentPadding = PaddingValues(0.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Cine VEO", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+
+            Button(
+                onClick = { activeTab = 1 },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (activeTab == 1) selectedTabColor else unselectedTabColor,
+                    contentColor = if (activeTab == 1) Color.Black else Color.White
+                ),
+                modifier = Modifier.weight(1f).height(40.dp),
+                contentPadding = PaddingValues(0.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.Menu, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Orquestadores", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (activeTab == 0) {
+            // CINE VEO VIEW
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                when (veoVideoStatus) {
+                    "SUCCESS" -> {
+                        // CINEMATIC THEATER SIMULATOR
+                        Text(
+                            text = "🎭 PROYECCIÓN FINAL (TEATRO VIRTUAL VEO)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        var isPlaying by remember { mutableStateOf(false) }
+                        var playTime by remember { mutableStateOf(0) }
+                        
+                        LaunchedEffect(isPlaying) {
+                            if (isPlaying) {
+                                while (playTime < 180) {
+                                    delay(1000)
+                                    playTime++
+                                }
+                                isPlaying = false
+                                playTime = 0
+                            }
+                        }
+
+                        val progressPct = playTime.toFloat() / 180f
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF090D16)),
+                            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                // Screen Canvas
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(2.39f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.Black),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (!isPlaying) {
+                                        // Poster style
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center,
+                                            modifier = Modifier.fillMaxSize().padding(12.dp)
+                                        ) {
+                                            IconButton(
+                                                onClick = { isPlaying = true },
+                                                modifier = Modifier
+                                                    .size(64.dp)
+                                                    .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.PlayArrow,
+                                                    contentDescription = "Reproducir",
+                                                    tint = Color.Black,
+                                                    modifier = Modifier.size(36.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Text(
+                                                text = project.title.uppercase(),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = Color.White,
+                                                textAlign = TextAlign.Center
+                                            )
+                                            Text(
+                                                text = "Google VEO Ultra-HD 4K | 2.39:1 CinemaScope",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = com.example.ui.theme.GrayText
+                                            )
+                                        }
+                                    } else {
+                                        // Playing design
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center,
+                                            modifier = Modifier.fillMaxSize().padding(12.dp)
+                                        ) {
+                                            // Spectrometer
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.height(40.dp)
+                                            ) {
+                                                repeat(12) { index ->
+                                                    val animatedHeight by rememberInfiniteTransition(label = "").animateFloat(
+                                                        initialValue = 5f,
+                                                        targetValue = 35f,
+                                                        animationSpec = infiniteRepeatable(
+                                                            animation = tween((300..800).random(), easing = FastOutSlowInEasing),
+                                                            repeatMode = RepeatMode.Reverse
+                                                        ),
+                                                        label = ""
+                                                    )
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .width(4.dp)
+                                                            .height(animatedHeight.dp)
+                                                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Text(
+                                                text = "⚙️ REPRODUCIENDO FILTRO DE MOVIMIENTO VEO...",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Decoder: Google VEO v1.1.2026 | Bitrate: VBR 75Mbps | Audio: Dolby Atmos 7.1",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.Gray,
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                // Progress row
+                                val minutes = playTime / 60
+                                val seconds = playTime % 60
+                                val timeString = String.format("%02d:%02d / 03:00", minutes, seconds)
+                                
+                                Text(
+                                    text = timeString,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color.LightGray
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                LinearProgressIndicator(
+                                    progress = progressPct,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = Color.DarkGray,
+                                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
+                                )
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(onClick = { isPlaying = !isPlaying }) {
+                                            Icon(
+                                                imageVector = if (isPlaying) Icons.Default.Close else Icons.Default.PlayArrow,
+                                                contentDescription = "Pausa/Play",
+                                                tint = Color.White
+                                            )
+                                        }
+                                        Icon(imageVector = Icons.Default.Share, contentDescription = "Dolby", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Atmos Surround Enabled", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                    }
+
+                                    Button(
+                                        onClick = { viewModel.generateVeoVideo() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Volver a Renderizar", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = { Toast.makeText(context, "Descargando video final.mp4...", Toast.LENGTH_SHORT).show() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Descargar MP4", fontWeight = FontWeight.Bold, maxLines = 1)
+                                        }
+                                    }
+                                    Button(
+                                        onClick = { showSocialDialog = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Publicar en Redes", fontWeight = FontWeight.Bold, maxLines = 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B).copy(alpha = 0.5f)),
+                            border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "📝 RESUMEN DE INTEGRACIÓN DE MODELO VEO",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "El video final de VEO unifica los entregables del pipeline. Estos son los prompts ajustados y aplicados:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.LightGray
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text("👤 Personajes:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                Text(veoCharacterCustom.ifBlank { "Características predeterminadas" }, style = MaterialTheme.typography.bodySmall, color = Color.White, modifier = Modifier.padding(bottom = 8.dp))
+                                
+                                Text("🖼️ Fondos y Escenarios:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                Text(veoBackgroundCustom.ifBlank { "Arquitectura brutalista y lluvia ácida" }, style = MaterialTheme.typography.bodySmall, color = Color.White, modifier = Modifier.padding(bottom = 8.dp))
+
+                                Text("🔊 audio y Banda Sonora:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                Text(veoSoundCustom.ifBlank { "Banda sonora melancólica" }, style = MaterialTheme.typography.bodySmall, color = Color.White)
+                            }
+                        }
+                    }
+                    "GENERATING" -> {
+                        // RENDER LOADING PROGRESS CONSOLE
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                CircularProgressIndicator(
+                                    progress = veoProgressFraction,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    strokeWidth = 6.dp,
+                                    modifier = Modifier.size(72.dp)
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Text(
+                                    text = "SINTETIZANDO CINE VEO",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                LinearProgressIndicator(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = Color.DarkGray,
+                                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = veoProgressMessage,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.LightGray,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Esto coordinará secuencialmente Imagen 3, Banana Pro y VEO.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+                    else -> {
+                        // REQUISITOS LIST Y CAMPO DE MODIFICACIONES PREVIAS
+                        Text(
+                            text = "🎬 PRODUCCIÓN DE VIDEO FINAL (GOOGLE VEO)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Para generar el video mediante VEO, los orquestadores de diseño deben primero estructurar los parámetros correspondientes.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = com.example.ui.theme.GrayText
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Checklist
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B).copy(alpha = 0.3f)),
+                            border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "REQUISITOS PREVIOS DE LOS ORQUESTADORES:",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                val charOk = executionStatus["CHARACTER_DESIGNER"] == true
+                                val bgOk = executionStatus["PRODUCTION_DESIGNER"] == true
+                                val soundOk = executionStatus["SOUND_DESIGNER"] == true
+                                val composerOk = executionStatus["COMPOSER"] == true
+
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Icon(
+                                        imageVector = if (charOk) Icons.Default.Check else Icons.Default.Close,
+                                        contentDescription = null,
+                                        tint = if (charOk) Color.Green else Color.Yellow,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Diseño de Personajes (Imagen 3 / Banana Pro)", style = MaterialTheme.typography.bodySmall, color = if (charOk) Color.White else Color.Gray)
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Icon(
+                                        imageVector = if (bgOk) Icons.Default.Check else Icons.Default.Close,
+                                        contentDescription = null,
+                                        tint = if (bgOk) Color.Green else Color.Yellow,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Escenarios y Fondos (Imagen 3 / Banana Pro)", style = MaterialTheme.typography.bodySmall, color = if (bgOk) Color.White else Color.Gray)
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Icon(
+                                        imageVector = if (composerOk) Icons.Default.Check else Icons.Default.Close,
+                                        contentDescription = null,
+                                        tint = if (composerOk) Color.Green else Color.Yellow,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Música y Leitmotivs (Composer)", style = MaterialTheme.typography.bodySmall, color = if (composerOk) Color.White else Color.Gray)
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Icon(
+                                        imageVector = if (soundOk) Icons.Default.Check else Icons.Default.Close,
+                                        contentDescription = null,
+                                        tint = if (soundOk) Color.Green else Color.Yellow,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Efectos de Sonido Foley (Sound Designer)", style = MaterialTheme.typography.bodySmall, color = if (soundOk) Color.White else Color.Gray)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // MODIFICATIONS CAPABILITIES IN PERSONAS / FONDOS / AUDIO
+                        Text(
+                            text = "✍️ REVISAR Y PARTICULARIZAR CARACTERÍSTICAS",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Introduce instrucciones adicionales antes de renderizar el video final en VEO:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Personajes Input
+                        OutlinedTextField(
+                            value = veoCharacterCustom,
+                            onValueChange = { viewModel.updateVeoCharacterCustom(it) },
+                            label = { Text("👤 Características del Personaje (Imagen 3 / Banana Pro)") },
+                            placeholder = { Text("Ej: Traje de neopreno con luces LED rojas parpadeantes, cicatriz facial...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Fondos Input
+                        OutlinedTextField(
+                            value = veoBackgroundCustom,
+                            onValueChange = { viewModel.updateVeoBackgroundCustom(it) },
+                            label = { Text("🖼️ Características del Fondo/Escenario (Imagen 3 / Banana Pro)") },
+                            placeholder = { Text("Ej: Ciudad flotante cyberpunk medieval con niebla espesa y pilares brutalistas...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Audio/Musica Input
+                        OutlinedTextField(
+                            value = veoSoundCustom,
+                            onValueChange = { viewModel.updateVeoSoundCustom(it) },
+                            label = { Text("🔊 Características de Música, Clímax y Foley") },
+                            placeholder = { Text("Ej: Melodía pesada de sintetizador analógico, viento aullando rítmico...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        Button(
+                            onClick = { viewModel.generateVeoVideo() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("generate_veo_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("PRODUCIR VIDEO EN VEO", fontWeight = FontWeight.Bold, color = Color.Black)
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // ORIGINAL LIST OF ORQUESTADORES DEPARTEMENTOS
+            Text(
+                text = "Departamentos / Orquestadores del Proyecto",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(CinemaSubagentsCatalog.list) { agent ->
+                    val isExecuted = executionStatus[agent.key] == true
+                    val memoryContent = projectMemories.find { it.key == agent.key }?.content ?: ""
+
+                    val cardBgColor = if (isExecuted) Color(0xFFC2410C).copy(alpha = 0.15f) else Color(0xFF15803D).copy(alpha = 0.15f)
+                    val cardBorderColor = if (isExecuted) Color(0xFFC2410C) else Color(0xFF15803D)
+                    val dotColor = if (isExecuted) Color(0xFFFF6B6B) else Color(0xFF4ADE80)
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                        border = BorderStroke(1.5.dp, cardBorderColor),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("subagent_card_${agent.key}")
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .background(dotColor, androidx.compose.foundation.shape.CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = agent.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                                Text(
+                                    text = if (isExecuted) "Ejecutado" else "Pendiente",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = dotColor
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = agent.role,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = com.example.ui.theme.GrayText
+                            )
+
+                            if (isExecuted) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.Black.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Text(
+                                        text = memoryContent.take(150) + if (memoryContent.length > 150) "..." else "",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.LightGray
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = { onEditSubagent(agent, memoryContent) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = cardBorderColor),
+                                    modifier = Modifier.align(Alignment.End).height(36.dp).testTag("subagent_edit_${agent.key}")
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Editar", tint = Color.White, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Editar", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun OrchestratorContentEditor(
+    agent: CinemaSubagent,
+    initialContent: String,
+    onBack: () -> Unit,
+    onUpdate: (String, String, String) -> Unit
+) {
+    var contentText by remember(initialContent) { mutableStateOf(initialContent) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = "Editar Orquestador",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = agent.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = com.example.ui.theme.GrayText
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, com.example.ui.theme.ImmersiveBorder),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Departamento: ${agent.layer.uppercase()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Rol Profesional: ${agent.role}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Tareas del Agente:",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray
+                )
+                agent.duties.forEach { duty ->
+                    Text(
+                        text = "• $duty",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.LightGray,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Entregable / Resultado narrativo",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = contentText,
+            onValueChange = { contentText = it },
+            modifier = Modifier.fillMaxWidth().height(300.dp).testTag("editor_content_input"),
+            maxLines = 100,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = com.example.ui.theme.ImmersiveBorder
+            )
         )
 
         Spacer(modifier = Modifier.height(32.dp))
 
         Button(
-            onClick = onCreateProjectClick,
+            onClick = { onUpdate(agent.key, agent.name, contentText) },
+            modifier = Modifier.fillMaxWidth().height(52.dp).testTag("editor_submit_button"),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .height(52.dp)
-                .widthIn(min = 240.dp)
-                .testTag("create_first_project_button")
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Símbolo de Agregar",
-                tint = Color.Black
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "Iniciar Producción",
-                fontWeight = FontWeight.Bold,
-                color = Color.Black,
-                style = MaterialTheme.typography.bodyLarge
-            )
+            Text(text = "Actualizar", fontWeight = FontWeight.Bold, color = Color.Black)
+        }
+    }
+}
+
+@Composable
+fun EmptyStudioScreen(
+    projects: List<MovieProject>,
+    onSelectProject: (MovieProject) -> Unit,
+    onCreateProjectClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.Top,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Icono estético de Claqueta / Cámara
+        Surface(
+            modifier = Modifier.size(80.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Cine AI Studio Icon",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = LocalContext.current.getString(R.string.home_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
+        )
+
+        Text(
+            text = LocalContext.current.getString(R.string.home_subtitle),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.LightGray,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // --- ACCIÓN 1: GENERAR CORTO (ACCION PRINCIPAL) ---
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 500.dp)
+                .clickable { onCreateProjectClick() },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Generar Corto",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = LocalContext.current.getString(R.string.home_generate_short),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = LocalContext.current.getString(R.string.home_generate_short_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.LightGray,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = onCreateProjectClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth(0.8f)
+                        .testTag("home_generate_short_button")
+                ) {
+                    Text(
+                        text = "Comenzar Guion",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // --- ACCIÓN 2: ABRIR PROYECTO EXISTENTE ---
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 500.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.List,
+                        contentDescription = "Proyectos Existentes",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = LocalContext.current.getString(R.string.home_open_existing),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = LocalContext.current.getString(R.string.home_open_existing_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (projects.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = LocalContext.current.getString(R.string.home_no_projects),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        projects.forEach { project ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                    .clickable { onSelectProject(project) }
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = project.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Género: ${project.genre} • Estilo: ${project.artStyle}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.Gray,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Abrir",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -246,6 +2113,32 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
     val generationState by viewModel.generationState.collectAsStateWithLifecycle()
 
     var showProjectSelectorMenu by remember { mutableStateOf(false) }
+    var showMonetizationDialog by remember { mutableStateOf(false) }
+    val userCredits by viewModel.userCredits.collectAsStateWithLifecycle()
+
+    if (showMonetizationDialog) {
+        AlertDialog(
+            onDismissRequest = { showMonetizationDialog = false },
+            title = { Text("Recargar Créditos", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Pay Per Request: Pagas lo que usas. Obtén créditos para ejecutar orquestadores premium y renderizar video real con VEO.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Créditos actuales: $userCredits", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { viewModel.buyCredits(100); showMonetizationDialog = false }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Comprar 100 Créditos ($1.00 USD)")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = { viewModel.buyCredits(500); showMonetizationDialog = false }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Comprar 500 Créditos ($4.50 USD)")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showMonetizationDialog = false }) { Text("Cerrar") } }
+        )
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isWideScreen = maxWidth >= 640.dp
@@ -270,7 +2163,8 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
                         projects = projects,
                         onSelectProject = { viewModel.selectProject(it) },
                         onCreateProjectClick = { viewModel.isCreatingProjectDialogVisible.value = true },
-                        onDeleteProjectClick = { viewModel.deleteCurrentProject() }
+                        onDeleteProjectClick = { viewModel.deleteCurrentProject() },
+                        onDeselectProjectClick = { viewModel.deselectProject() }
                     )
 
                     Divider(color = MaterialTheme.colorScheme.surfaceVariant)
@@ -310,7 +2204,7 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
             }
         } else {
             // DISEÑO ADAPTIVO PORTÁTIL (COMPACT): Navegación por pestañas inferiores
-            var activeTabId by remember { mutableIntStateOf(0) } // 0: Estudio/Agentes, 1: Consola, 2: Biblia Central, 3: Métricas L5
+            val activeTabId by viewModel.activeTabCompact.collectAsStateWithLifecycle()
 
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header superior minimalista con info del proyecto activo
@@ -319,7 +2213,8 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
                     projects = projects,
                     onSelectProject = { viewModel.selectProject(it) },
                     onCreateProjectClick = { viewModel.isCreatingProjectDialogVisible.value = true },
-                    onDeleteProjectClick = { viewModel.deleteCurrentProject() }
+                    onDeleteProjectClick = { viewModel.deleteCurrentProject() },
+                    onDeselectProjectClick = { viewModel.deselectProject() }
                 )
 
                 Divider(color = MaterialTheme.colorScheme.surfaceVariant)
@@ -343,7 +2238,7 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
                                     viewModel = viewModel,
                                     onSelectSubagent = {
                                         viewModel.selectSubagent(it)
-                                        activeTabId = 1 // Salta a la consola para editar
+                                        viewModel.updateActiveTabCompact(1) // Salta a la consola para editar
                                     }
                                 )
                             }
@@ -383,34 +2278,48 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
                 ) {
                     NavigationBarItem(
                         selected = activeTabId == 0,
-                        onClick = { activeTabId = 0 },
+                        onClick = { viewModel.updateActiveTabCompact(0) },
                         label = { Text("Estudio") },
                         icon = { Icon(Icons.Default.Menu, contentDescription = "Pestaña Estudio") },
                         modifier = Modifier.testTag("nav_item_estudio")
                     )
                     NavigationBarItem(
                         selected = activeTabId == 1,
-                        onClick = { activeTabId = 1 },
+                        onClick = { viewModel.updateActiveTabCompact(1) },
                         label = { Text("Consola") },
                         icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Pestaña Consola") },
                         modifier = Modifier.testTag("nav_item_consola")
                     )
                     NavigationBarItem(
                         selected = activeTabId == 2,
-                        onClick = { activeTabId = 2 },
+                        onClick = { viewModel.updateActiveTabCompact(2) },
                         label = { Text("Biblia DB") },
                         icon = { Icon(Icons.Default.Info, contentDescription = "Pestaña Biblia") },
                         modifier = Modifier.testTag("nav_item_biblia")
                     )
                     NavigationBarItem(
                         selected = activeTabId == 3,
-                        onClick = { activeTabId = 3 },
+                        onClick = { viewModel.updateActiveTabCompact(3) },
                         label = { Text("Métricas L5") },
                         icon = { Icon(Icons.Default.List, contentDescription = "Pestaña Observabilidad") },
                         modifier = Modifier.testTag("nav_item_observabilidad")
                     )
                 }
             }
+        }
+
+        // Float Button for Credits
+        androidx.compose.material3.ExtendedFloatingActionButton(
+            onClick = { showMonetizationDialog = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = if (isWideScreen) 32.dp else 100.dp, end = 24.dp), // Ajuste por la navigation bar en compact
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ) {
+            Icon(Icons.Default.ShoppingCart, contentDescription = "Créditos")
+            Spacer(Modifier.width(8.dp))
+            Text(text = "$userCredits Créditos", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -421,7 +2330,8 @@ fun LogoAndProjectSelectorHeader(
     projects: List<MovieProject>,
     onSelectProject: (MovieProject) -> Unit,
     onCreateProjectClick: () -> Unit,
-    onDeleteProjectClick: () -> Unit
+    onDeleteProjectClick: () -> Unit,
+    onDeselectProjectClick: () -> Unit
 ) {
     var expandedMenu by remember { mutableStateOf(false) }
 
@@ -502,7 +2412,7 @@ fun LogoAndProjectSelectorHeader(
                 modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Text(
-                    text = "Seleccionar Proyecto:",
+                    text = "Abrir Trabajo Guardado:",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
@@ -527,6 +2437,14 @@ fun LogoAndProjectSelectorHeader(
 
                 Divider(color = MaterialTheme.colorScheme.surface)
 
+                Text(
+                    text = "Ajustes de Película:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+
                 DropdownMenuItem(
                     leadingIcon = { Icon(Icons.Default.Add, contentDescription = "Agregar icono") },
                     text = { Text("Nueva Película...") },
@@ -535,6 +2453,15 @@ fun LogoAndProjectSelectorHeader(
                         expandedMenu = false
                     },
                     modifier = Modifier.testTag("menu_create_project")
+                )
+
+                DropdownMenuItem(
+                    leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = "Cerrar e Inicio") },
+                    text = { Text("Cerrar Película (Ir a Inicio)") },
+                    onClick = {
+                        onDeselectProjectClick()
+                        expandedMenu = false
+                    }
                 )
 
                 DropdownMenuItem(
@@ -558,7 +2485,8 @@ fun TopAppBarCompact(
     projects: List<MovieProject>,
     onSelectProject: (MovieProject) -> Unit,
     onCreateProjectClick: () -> Unit,
-    onDeleteProjectClick: () -> Unit
+    onDeleteProjectClick: () -> Unit,
+    onDeselectProjectClick: () -> Unit
 ) {
     var expandedMenu by remember { mutableStateOf(false) }
 
@@ -595,7 +2523,7 @@ fun TopAppBarCompact(
                 onDismissRequest = { expandedMenu = false }
             ) {
                 Text(
-                    text = "Proyectos del Estudio:",
+                    text = "Abrir Trabajo Guardado:",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
@@ -613,11 +2541,27 @@ fun TopAppBarCompact(
 
                 Divider()
 
+                Text(
+                    text = "Ajustes de Película:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+
                 DropdownMenuItem(
                     leadingIcon = { Icon(Icons.Default.Add, "Agregar") },
-                    text = { Text("Crear Película") },
+                    text = { Text("Nueva Película...") },
                     onClick = {
                         onCreateProjectClick()
+                        expandedMenu = false
+                    }
+                )
+
+                DropdownMenuItem(
+                    leadingIcon = { Icon(Icons.Default.PlayArrow, "Cerrar") },
+                    text = { Text("Cerrar (Ir a Inicio)") },
+                    onClick = {
+                        onDeselectProjectClick()
                         expandedMenu = false
                     }
                 )
@@ -648,9 +2592,9 @@ fun SubagentsTreeMenu(
     // El estado de cuáles capas están expandidas por defecto
     val expandedLayers = remember {
         mutableStateMapOf<String, Boolean>().apply {
-            // Expandimos por defecto las capas 0 y 1 para guiar al usuario
+            // Expandimos por defecto todas las capas para que el usuario pueda ver a todos los subagentes (como el Montador o Colorista)
             CinemaSubagentsCatalog.layers.forEach { layerName ->
-                this[layerName] = layerName.contains("Capa 0") || layerName.contains("Capa 1")
+                this[layerName] = true
             }
         }
     }
@@ -796,7 +2740,7 @@ fun WorkstationSection(
     generationState: GenerationState,
     memories: List<ProjectMemory>
 ) {
-    var selectedTabId by remember { mutableIntStateOf(0) } // 0: Editor/Taller, 1: Memoria Central del Proyecto, 2: Métricas L5
+    val selectedTabId by viewModel.activeTabWide.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         // TabRow de Trabajo
@@ -807,7 +2751,7 @@ fun WorkstationSection(
         ) {
             Tab(
                 selected = selectedTabId == 0,
-                onClick = { selectedTabId = 0 },
+                onClick = { viewModel.updateActiveTabWide(0) },
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.PlayArrow, contentDescription = "Taller", modifier = Modifier.size(16.dp))
@@ -823,7 +2767,7 @@ fun WorkstationSection(
             )
             Tab(
                 selected = selectedTabId == 1,
-                onClick = { selectedTabId = 1 },
+                onClick = { viewModel.updateActiveTabWide(1) },
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Info, contentDescription = "Memoria", modifier = Modifier.size(16.dp))
@@ -839,7 +2783,7 @@ fun WorkstationSection(
             )
             Tab(
                 selected = selectedTabId == 2,
-                onClick = { selectedTabId = 2 },
+                onClick = { viewModel.updateActiveTabWide(2) },
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.List, contentDescription = "Métricas L5", modifier = Modifier.size(16.dp))
@@ -1281,6 +3225,7 @@ fun WorkstationConsolePane(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 val clipboardManager = LocalClipboardManager.current
+                val context = LocalContext.current
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1294,17 +3239,24 @@ fun WorkstationConsolePane(
                         modifier = Modifier.weight(1f)
                     )
 
-                    // Botón para copiar reporte
+                    // Botón para copiar reporte y descargar PDF
                     if (generationState is GenerationState.Success) {
-                        IconButton(onClick = {
-                            clipboardManager.setText(AnnotatedString(generationState.response))
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Copiar entregable",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
+                        Row {
+                            TextButton(onClick = {
+                                Toast.makeText(context, "Descargando documento_tecnico.pdf...", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Text("Descargar PDF", style = MaterialTheme.typography.labelSmall)
+                            }
+                            IconButton(onClick = {
+                                clipboardManager.setText(AnnotatedString(generationState.response))
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Copiar entregable",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1417,9 +3369,9 @@ fun UnifiedBibliaPane(
         when (workflowState) {
             "IDLE" -> {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
@@ -1427,117 +3379,66 @@ fun UnifiedBibliaPane(
                     Column(modifier = Modifier.padding(18.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Paso 1",
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "Ficha",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "OBRA MAESTRA: PLANIFICADOR DE HISTORIA Y STORYBOARD",
+                                text = "FICHA TÉCNICA: ${project.title.uppercase()}",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
                         Text(
-                            text = "Establece la idea de tu cortometraje y el tiempo estimado del corto. Nuestro Guionista Principal epectará una propuesta clásica estructurada en 3 Actos, delineará las tomas correspondientes alineadas con la duración seleccionada, y el Director de Escena auditará la consistencia lógica general para asegurar raccord técnico impecable.",
+                            text = "Detalles constitutivos del proyecto de cine seleccionado en la base de datos.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.LightGray
                         )
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // TEXTFIELD IDEA
-                        Text(
-                            text = "PREMISA O IDEA DEL CORTOMETRAJE:",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = ideaText,
-                            onValueChange = { viewModel.updateVideoIdea(it) },
-                            placeholder = { Text("Ej: Un astronauta descifra un mensaje musical de una estrella muerta que relata el fin del universo...") },
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(100.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("GÉNERO", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                Text(project.genre, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("ESTILO VISUAL", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                Text(project.artStyle, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                            }
+                        }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                        // SELECCIÓN DE DURACIÓN (TIEMPO DEL CORTO)
-                        Text(
-                            text = "DURACIÓN ESTIMADA DEL CORTO:",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf("1 minuto", "3 minutos", "5 minutos", "10 minutos").forEach { opt ->
-                                val selected = durationText == opt
-                                Surface(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { viewModel.updateShortFilmDuration(opt) },
-                                    color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
-                                    border = BorderStroke(
-                                        width = 1.dp,
-                                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                                    ),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier.padding(vertical = 10.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = opt,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (selected) MaterialTheme.colorScheme.primary else Color.LightGray
-                                        )
-                                    }
-                                }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("AUDIENCIA", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                Text(project.targetAudience, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("DURACIÓN", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                Text(durationText.ifEmpty { "3 minutos" }, style = MaterialTheme.typography.bodyMedium, color = Color.White)
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
-
-                        Button(
-                            onClick = { viewModel.startStoryboardCreation(ideaText, durationText) },
-                            enabled = ideaText.isNotBlank(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                disabledContainerColor = Color.DarkGray
-                            ),
-                            shape = RoundedCornerShape(8.dp),
+                        Text("PREMISA O IDEA DEL CORTOMETRAJE:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(46.dp)
+                                .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = "Orquestar", tint = Color.Black)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "CONCEBIR 3 ACTOS Y STORYBOARD SEGURIZADO",
-                                    color = Color.Black,
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                            }
+                            Text(
+                                text = project.description.ifEmpty { "Ninguna premisa especificada." },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.LightGray
+                            )
                         }
                     }
                 }
@@ -1793,17 +3694,17 @@ fun UnifiedBibliaPane(
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF131A14)),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFF4CAF50)),
+                    border = BorderStroke(1.5.dp, Color(0xFF4CAF50)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(18.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("🚀", style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "STORYBOARD EN PRODUCCIÓN ACTIVA",
+                                text = "STORYBOARD EN PRODUCCIÓN",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF4CAF50),
@@ -1818,12 +3719,76 @@ fun UnifiedBibliaPane(
                                 Text("Re-diseñar Base", style = MaterialTheme.typography.labelSmall, color = Color.White)
                             }
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
                         Text(
-                            text = "La idea de corto '$ideaText' de $durationText ha sido aprobada oficialmente bajo el sello de consistencia del director de escena. Los subagentes subsiguientes están orquestándose activamente y grabando folios en el expediente inferior.",
+                            text = "La idea de corto '$ideaText' de $durationText ha sido aprobada oficialmente bajo el sello de consistencia del director de escena. El Storyboard y los 3 Actos están consolidados en la Biblia.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.LightGray
                         )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Divider(color = Color(0xFF2C3529))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "🎯 GUIÓN Y CONTRATOS APROBADOS:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4CAF50)
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Elementos clave aprobados
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = "Listo", tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Propuesta clásica estructurada en 3 Actos", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = "Listo", tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Desglose formal de tomas técnicas para $durationText", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = "Listo", tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Coherencia de raccord & eje auditada y firmada", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Column {
+                                Text(
+                                    text = "✨ ¿QUÉ DEBO HACER AHORA?",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Dirígete a la pestaña superior 'Taller de Orquestación de Agentes'. Entra a los subdepartamentos de Arte, Dirección o Sonido para expander y detallar individualmente la película en base a estas pautas centrales aprobadas.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.LightGray
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -2018,27 +3983,32 @@ fun RenderMarkdownText(text: String) {
 @Composable
 fun CreateProjectDialog(
     onDismiss: () -> Unit,
-    onConfirm: (title: String, genre: String, artStyle: String, description: String, targetAudience: String) -> Unit
+    onConfirm: (title: String, genre: String, artStyle: String, description: String, targetAudience: String, duration: String) -> Unit
 ) {
+    var step by remember { mutableIntStateOf(1) } // 1, 2, or 3
+    
     var title by remember { mutableStateOf("") }
     var genre by remember { mutableStateOf("Ciencia Ficción") }
     var artStyle by remember { mutableStateOf("Fotorrealista Oscuro (Brutalista)") }
     var targetAudience by remember { mutableStateOf("Adulto / Maduro") }
     var description by remember { mutableStateOf("") }
+    var duration by remember { mutableStateOf("3 minutos") } // default duration for short film
 
     val genres = listOf("Ciencia Ficción", "Fantasía Épica", "Cine Negro / Noir", "Terror Psicológico", "Drama Histórico", "Anime / Cyberpunk")
     val styles = listOf("Fotorrealista Oscuro (Brutalista)", "Estilo Anime Cinematográfico", "Expresionismo Alemán", "Pintoresco / Óleo", "Cyberpunk Neón")
-    val audiences = listOf("Adulto / Maduro", "Todo Público (PG)", "Adolescentes / Joves", "Experimental")
+    val audiences = listOf("Adulto / Maduro", "Todo Público (PG)", "Adolescentes / Joven", "Experimental")
+    val durations = listOf("1 minuto", "3 minutos", "5 minutos", "10 minutos")
 
     var expandedGenre by remember { mutableStateOf(false) }
     var expandedStyle by remember { mutableStateOf(false) }
     var expandedAudience by remember { mutableStateOf(false) }
+    var expandedDuration by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 24.dp)
@@ -2048,159 +4018,289 @@ fun CreateProjectDialog(
                     .padding(20.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                Text(
-                    text = "NUEVA PRODUCCIÓN DE CINE",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Configura los metadatos globales que heredarán sistemáticamente todos los subagentes del estudio.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Campo: Título de la obra
-                Text(text = "Título de la Película:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                Spacer(modifier = Modifier.height(4.dp))
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    placeholder = { Text("Ej. Proyecto Hesperia") },
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
-                    modifier = Modifier.fillMaxWidth().testTag("input_project_title"),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                // Indicador de pasos arriba
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = LocalContext.current.getString(R.string.wizard_title),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Campo: Género desplegable
-                Text(text = "Género Cinematográfico:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                Spacer(modifier = Modifier.height(4.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { expandedGenre = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                    ) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(genre)
-                            Icon(Icons.Default.Settings, contentDescription = "Arrow")
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = expandedGenre,
-                        onDismissRequest = { expandedGenre = false }
-                    ) {
-                        genres.forEach { choice ->
-                            DropdownMenuItem(text = { Text(choice) }, onClick = { genre = choice; expandedGenre = false })
-                        }
-                    }
+                    Text(
+                        text = LocalContext.current.getString(R.string.wizard_step, step),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.LightGray
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Campo: Estilo visual desplegable
-                Text(text = "Estilo Artístico / Visual:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                Spacer(modifier = Modifier.height(4.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { expandedStyle = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                    ) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(artStyle)
-                            Icon(Icons.Default.Settings, contentDescription = "Arrow")
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = expandedStyle,
-                        onDismissRequest = { expandedStyle = false }
-                    ) {
-                        styles.forEach { choice ->
-                            DropdownMenuItem(text = { Text(choice) }, onClick = { artStyle = choice; expandedStyle = false })
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Campo: Target desplegable
-                Text(text = "Público Objetivo (Audience):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                Spacer(modifier = Modifier.height(4.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { expandedAudience = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                    ) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(targetAudience)
-                            Icon(Icons.Default.Settings, contentDescription = "Arrow")
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = expandedAudience,
-                        onDismissRequest = { expandedAudience = false }
-                    ) {
-                        audiences.forEach { choice ->
-                            DropdownMenuItem(text = { Text(choice) }, onClick = { targetAudience = choice; expandedAudience = false })
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Campo: Sinopsis
-                Text(text = "Sinopsis de Base (Brief de la Película):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                Spacer(modifier = Modifier.height(4.dp))
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    placeholder = { Text("Añade una breve descripción con la idea central de la película...") },
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                // Barra de progreso de paso
+                LinearProgressIndicator(
+                    progress = step / 3.0f,
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp)
-                        .testTag("input_project_description"),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                        .height(4.dp)
+                        .padding(bottom = 16.dp)
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                // Contenido según el paso activo
+                when (step) {
+                    1 -> {
+                        // PASO 1: Identidad cinemática
+                        Text(
+                            text = LocalContext.current.getString(R.string.wizard_step1_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Text(
+                            text = LocalContext.current.getString(R.string.wizard_step1_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
 
-                // Botones de acción
+                        Text(text = "Título del Cortometraje:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = { title = it },
+                            placeholder = { Text("Ej. El último amanecer") },
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                            modifier = Modifier.fillMaxWidth().testTag("input_project_title"),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(text = "Género Cinematográfico:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { expandedGenre = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                            ) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(genre)
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Seleccionar género")
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = expandedGenre,
+                                onDismissRequest = { expandedGenre = false }
+                            ) {
+                                genres.forEach { choice ->
+                                    DropdownMenuItem(text = { Text(choice) }, onClick = { genre = choice; expandedGenre = false })
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(text = "Estilo Artístico / Visual:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { expandedStyle = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                            ) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(artStyle)
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Seleccionar estilo")
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = expandedStyle,
+                                onDismissRequest = { expandedStyle = false }
+                            ) {
+                                styles.forEach { choice ->
+                                    DropdownMenuItem(text = { Text(choice) }, onClick = { artStyle = choice; expandedStyle = false })
+                                }
+                            }
+                        }
+                    }
+                    2 -> {
+                        // PASO 2: Dirección Narrativa y Concepto
+                        Text(
+                            text = LocalContext.current.getString(R.string.wizard_step2_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Text(
+                            text = LocalContext.current.getString(R.string.wizard_step2_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+
+                        Text(text = "Público Objetivo (Audience):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { expandedAudience = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                            ) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(targetAudience)
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Seleccionar público")
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = expandedAudience,
+                                onDismissRequest = { expandedAudience = false }
+                            ) {
+                                audiences.forEach { choice ->
+                                    DropdownMenuItem(text = { Text(choice) }, onClick = { targetAudience = choice; expandedAudience = false })
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(text = "Sinopsis de Base / Idea del Corto (Premisa):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it },
+                            placeholder = { Text("Ej. Una civilización perdida bajo el mar descubre una señal de radio que proviene de un viejo faro terrestre abandonado...") },
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .testTag("input_project_description"),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        )
+                    }
+                    3 -> {
+                        // PASO 3: Duración y Configuración del Storyboard
+                        Text(
+                            text = LocalContext.current.getString(R.string.wizard_step3_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        Text(
+                            text = LocalContext.current.getString(R.string.wizard_step3_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+
+                        Text(text = "Duración Objetivo del Cortometraje:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { expandedDuration = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                            ) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(duration)
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Seleccionar duración")
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = expandedDuration,
+                                onDismissRequest = { expandedDuration = false }
+                            ) {
+                                durations.forEach { choice ->
+                                    DropdownMenuItem(text = { Text(choice) }, onClick = { duration = choice; expandedDuration = false })
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Resumen de la configuración antes de mandar
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(text = "RESUMEN DE PRODUCCIÓN", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(text = "🎬 Película: $title", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                                Text(text = "🎭 Género: $genre", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                                Text(text = "👁️ Estilo: $artStyle", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                                Text(text = "⏱️ Duración: $duration", style = MaterialTheme.typography.bodySmall, color = Color.White)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Botones de navegación inferior
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancelar", color = Color.Gray)
+                    if (step > 1) {
+                        OutlinedButton(
+                            onClick = { step-- },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color.Gray),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        ) {
+                            Text("Atrás")
+                        }
+                    } else {
+                        TextButton(onClick = onDismiss) {
+                            Text("Cancelar", color = Color.Gray)
+                        }
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (title.isNotBlank() && description.isNotBlank()) {
-                                onConfirm(title, genre, artStyle, description, targetAudience)
+
+                    Row {
+                        if (step < 3) {
+                            Button(
+                                onClick = { step++ },
+                                enabled = if (step == 1) title.isNotBlank() else description.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Siguiente", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
-                        },
-                        enabled = title.isNotBlank() && description.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Text("Iniciar", color = Color.Black, fontWeight = FontWeight.Bold)
+                        } else {
+                            Button(
+                                onClick = {
+                                    onConfirm(title, genre, artStyle, description, targetAudience, duration)
+                                },
+                                enabled = title.isNotBlank() && description.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = "Generar", tint = Color.Black)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Generar Corto", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
