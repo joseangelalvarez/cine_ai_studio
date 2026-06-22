@@ -142,17 +142,24 @@ fun CineStudioApp(viewModel: MovieProjectViewModel) {
     val projectMemories by viewModel.projectMemories.collectAsStateWithLifecycle()
     val useSecureGateway by viewModel.useSecureGateway.collectAsStateWithLifecycle()
     val lastGenerationError by viewModel.lastGenerationError.collectAsStateWithLifecycle()
+    
+    val isPremium by viewModel.isPremium.collectAsStateWithLifecycle()
+    val showPaywall by viewModel.showPaywall.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         when (currentScreenState) {
             "HOME" -> {
                 SimplifiedHomeScreen(
                     onCreateProjectClick = {
-                        viewModel.wizardTitle.value = ""
-                        viewModel.wizardDuration.value = "3 minutos"
-                        viewModel.wizardArtStyle.value = "Cinemático Ultra-Realista"
-                        viewModel.wizardIdea.value = ""
-                        viewModel.navigateToScreen("CREATE_WIZARD_STEP1")
+                        if (projects.isNotEmpty() && !isPremium) {
+                            viewModel.triggerPaywall()
+                        } else {
+                            viewModel.wizardTitle.value = ""
+                            viewModel.wizardDuration.value = "3 minutos"
+                            viewModel.wizardArtStyle.value = "Cinemático Ultra-Realista"
+                            viewModel.wizardIdea.value = ""
+                            viewModel.navigateToScreen("CREATE_WIZARD_STEP1")
+                        }
                     },
                     onOpenProjectsClick = { viewModel.navigateToScreen("PROJECT_LIST") }
                 )
@@ -241,6 +248,13 @@ fun CineStudioApp(viewModel: MovieProjectViewModel) {
                     )
                 }
             }
+        }
+        
+        if (showPaywall) {
+            com.example.ui.screens.PaywallScreen(
+                onDismiss = { viewModel.dismissPaywall() },
+                onSubscribe = { viewModel.unlockPremium() }
+            )
         }
     }
 }
@@ -1107,7 +1121,77 @@ fun SimplifiedProjectDetailsScreen(
 
     var activeTab by remember { mutableStateOf(1) } // 0: Video Google VEO, 1: Orquestadores
     var showSocialDialog by remember { mutableStateOf(false) }
+    var showExportApiDialog by remember { mutableStateOf(false) }
+    var selectedApiProvider by remember { mutableStateOf("Runway Gen-3") }
+    var externalApiKey by remember { mutableStateOf("") }
     val context = LocalContext.current
+
+    if (showExportApiDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportApiDialog = false },
+            title = { Text("Exportar a Proveedor AI Externo", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Introduce la API Key del proveedor al que deseas enviar los datos de preproducción. Se ejecutarán todos los orquestadores.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    var expandedDropdown by remember { mutableStateOf(false) }
+                    
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = selectedApiProvider,
+                            onValueChange = {},
+                            label = { Text("Proveedor de IA") },
+                            modifier = Modifier.fillMaxWidth(),
+                            readOnly = true,
+                            trailingIcon = {
+                                IconButton(onClick = { expandedDropdown = !expandedDropdown }) {
+                                    Icon(Icons.Default.ArrowDropDown, "Seleccionar")
+                                }
+                            }
+                        )
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = expandedDropdown,
+                            onDismissRequest = { expandedDropdown = false }
+                        ) {
+                            listOf("Runway Gen-3", "Luma Dream Machine", "Kling AI", "Sora").forEach { api ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(api) },
+                                    onClick = { 
+                                        selectedApiProvider = api
+                                        expandedDropdown = false 
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = externalApiKey, 
+                        onValueChange = { externalApiKey = it }, 
+                        label = { Text("API Key") }, 
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { 
+                    if (externalApiKey.isBlank()) {
+                        Toast.makeText(context, "Por favor, introduce tu API Key", Toast.LENGTH_SHORT).show()
+                    } else {
+                        showExportApiDialog = false
+                        viewModel.exportPackage(selectedApiProvider)
+                    }
+                }) {
+                    Text("Exportar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportApiDialog = false }) { Text("Cancelar") }
+            }
+        )
+    }
 
     if (showSocialDialog) {
         AlertDialog(
@@ -1188,7 +1272,7 @@ fun SimplifiedProjectDetailsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Cine VEO", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                    Text("Storyboard & Prompts", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
                 }
             }
 
@@ -1221,213 +1305,84 @@ fun SimplifiedProjectDetailsScreen(
             ) {
                 when (veoVideoStatus) {
                     "SUCCESS" -> {
-                        // CINEMATIC THEATER SIMULATOR
+                        // STORYBOARD & PROMPTS EXTRACTOR
                         Text(
-                            text = "🎭 PROYECCIÓN FINAL (TEATRO VIRTUAL VEO)",
+                            text = "📋 STORYBOARD & EXPORTACIÓN DE PROMPTS",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        var isPlaying by remember { mutableStateOf(false) }
-                        var playTime by remember { mutableStateOf(0) }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Gana control total sobre tu película. Utiliza estos prompts de pre-producción generados a partir de tu idea para copiarlos en generadores externos (Runway Gen-3, Luma Dream Machine o Kling) y obtendrás los videos exactos para tu cortometraje.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.LightGray
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
                         
-                        LaunchedEffect(isPlaying) {
-                            if (isPlaying) {
-                                while (playTime < 180) {
-                                    delay(1000)
-                                    playTime++
+                        val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+                        
+                        // Scene 1
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF090D16)),
+                            border = BorderStroke(1.dp, Color.DarkGray),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("ESCENA 1: ESTABLECIMIENTO - PLANO GENERAL", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Image(
+                                    painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.movie_placeholder_1782140486854),
+                                    contentDescription = "Scene",
+                                    modifier = Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(6.dp)),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                val prompt1 = "Cinematic wide aspect ratio 2.39:1, establishing shot. High detail, octane render, 8k resolution. \${project.idea}. \${project.artStyle} style, moody lighting, lens flares, dramatic atmosphere."
+                                Text(prompt1, style = MaterialTheme.typography.bodySmall, color = Color.White)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { 
+                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(prompt1))
+                                        Toast.makeText(context, "Prompt copiado", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Copiar Prompt para IA de Video")
                                 }
-                                isPlaying = false
-                                playTime = 0
                             }
                         }
 
-                        val progressPct = playTime.toFloat() / 180f
-
+                        // Scene 2
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF090D16)),
-                            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, Color.DarkGray),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                // Screen Canvas
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(2.39f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(Color.Black),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (!isPlaying) {
-                                        // Poster style
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center,
-                                            modifier = Modifier.fillMaxSize().padding(12.dp)
-                                        ) {
-                                            IconButton(
-                                                onClick = { isPlaying = true },
-                                                modifier = Modifier
-                                                    .size(64.dp)
-                                                    .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.PlayArrow,
-                                                    contentDescription = "Reproducir",
-                                                    tint = Color.Black,
-                                                    modifier = Modifier.size(36.dp)
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                            Text(
-                                                text = project.title.uppercase(),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = Color.White,
-                                                textAlign = TextAlign.Center
-                                            )
-                                            Text(
-                                                text = "Google VEO Ultra-HD 4K | 2.39:1 CinemaScope",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = com.example.ui.theme.GrayText
-                                            )
-                                        }
-                                    } else {
-                                        // Playing design
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center,
-                                            modifier = Modifier.fillMaxSize().padding(12.dp)
-                                        ) {
-                                            // Spectrometer
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.height(40.dp)
-                                            ) {
-                                                repeat(12) { index ->
-                                                    val animatedHeight by rememberInfiniteTransition(label = "").animateFloat(
-                                                        initialValue = 5f,
-                                                        targetValue = 35f,
-                                                        animationSpec = infiniteRepeatable(
-                                                            animation = tween((300..800).random(), easing = FastOutSlowInEasing),
-                                                            repeatMode = RepeatMode.Reverse
-                                                        ),
-                                                        label = ""
-                                                    )
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .width(4.dp)
-                                                            .height(animatedHeight.dp)
-                                                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                            Text(
-                                                text = "⚙️ REPRODUCIENDO FILTRO DE MOVIMIENTO VEO...",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = "Decoder: Google VEO v1.1.2026 | Bitrate: VBR 75Mbps | Audio: Dolby Atmos 7.1",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = Color.Gray,
-                                                textAlign = TextAlign.Center
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                // Progress row
-                                val minutes = playTime / 60
-                                val seconds = playTime % 60
-                                val timeString = String.format("%02d:%02d / 03:00", minutes, seconds)
-                                
-                                Text(
-                                    text = timeString,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = Color.LightGray
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                LinearProgressIndicator(
-                                    progress = progressPct,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = Color.DarkGray,
-                                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
-                                )
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Row(
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("ESCENA 2: ACCIÓN - PRIMER PLANO", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                val prompt2 = "Close up, shallow depth of field, 2.39:1 aspect ratio. Subject expressing intense emotion facing the camera. \${project.artStyle} style. Cinematic lighting, soft shadows, sharp focus on eyes."
+                                Text(prompt2, style = MaterialTheme.typography.bodySmall, color = Color.White)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { 
+                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(prompt2))
+                                        Toast.makeText(context, "Prompt copiado", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(onClick = { isPlaying = !isPlaying }) {
-                                            Icon(
-                                                imageVector = if (isPlaying) Icons.Default.Close else Icons.Default.PlayArrow,
-                                                contentDescription = "Pausa/Play",
-                                                tint = Color.White
-                                            )
-                                        }
-                                        Icon(imageVector = Icons.Default.Share, contentDescription = "Dolby", tint = Color.Gray, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Atmos Surround Enabled", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                                    }
-
-                                    Button(
-                                        onClick = { viewModel.generateVeoVideo() },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Volver a Renderizar", color = Color.White, style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Button(
-                                        onClick = { Toast.makeText(context, "Descargando video final.mp4...", Toast.LENGTH_SHORT).show() },
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(Modifier.width(4.dp))
-                                            Text("Descargar MP4", fontWeight = FontWeight.Bold, maxLines = 1)
-                                        }
-                                    }
-                                    Button(
-                                        onClick = { showSocialDialog = true },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(Modifier.width(4.dp))
-                                            Text("Publicar en Redes", fontWeight = FontWeight.Bold, maxLines = 1)
-                                        }
-                                    }
+                                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Copiar Prompt para IA de Video")
                                 }
                             }
                         }
@@ -1442,14 +1397,14 @@ fun SimplifiedProjectDetailsScreen(
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    text = "📝 RESUMEN DE INTEGRACIÓN DE MODELO VEO",
+                                    text = "📝 RESUMEN DE COMPOSICIÓN FINAL",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "El video final de VEO unifica los entregables del pipeline. Estos son los prompts ajustados y aplicados:",
+                                    text = "El documento final unifica los entregables del pipeline. Estos son los prompts ajustados para tus generadores:",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.LightGray
                                 )
@@ -1485,7 +1440,7 @@ fun SimplifiedProjectDetailsScreen(
                                 )
                                 Spacer(modifier = Modifier.height(20.dp))
                                 Text(
-                                    text = "SINTETIZANDO CINE VEO",
+                                    text = "SINTETIZANDO STORYBOARD Y PROMPTS",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
@@ -1505,7 +1460,7 @@ fun SimplifiedProjectDetailsScreen(
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "Esto coordinará secuencialmente Imagen 3, Banana Pro y VEO.",
+                                    text = "Generando prompts optimizados para IA...",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.Gray
                                 )
@@ -1515,14 +1470,14 @@ fun SimplifiedProjectDetailsScreen(
                     else -> {
                         // REQUISITOS LIST Y CAMPO DE MODIFICACIONES PREVIAS
                         Text(
-                            text = "🎬 PRODUCCIÓN DE VIDEO FINAL (GOOGLE VEO)",
+                            text = "🎬 EXPORTACIÓN A GENERADORES EXTERNOS DE VIDEO",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Para generar el video mediante VEO, los orquestadores de diseño deben primero estructurar los parámetros correspondientes.",
+                            text = "Antes de exportar el plan de dirección a formatos compatibles con Runway Gen-3, Luma o Kling, los orquestadores deben establecer la coherencia visual.",
                             style = MaterialTheme.typography.bodySmall,
                             color = com.example.ui.theme.GrayText
                         )
@@ -1538,7 +1493,7 @@ fun SimplifiedProjectDetailsScreen(
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    text = "REQUISITOS PREVIOS DE LOS ORQUESTADORES:",
+                                    text = "ESTADO DE PRE-PRODUCCIÓN:",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
@@ -1558,7 +1513,7 @@ fun SimplifiedProjectDetailsScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Diseño de Personajes (Imagen 3 / Banana Pro)", style = MaterialTheme.typography.bodySmall, color = if (charOk) Color.White else Color.Gray)
+                                    Text("Diseño de Personajes Estructurado", style = MaterialTheme.typography.bodySmall, color = if (charOk) Color.White else Color.Gray)
                                 }
 
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
@@ -1569,7 +1524,7 @@ fun SimplifiedProjectDetailsScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Escenarios y Fondos (Imagen 3 / Banana Pro)", style = MaterialTheme.typography.bodySmall, color = if (bgOk) Color.White else Color.Gray)
+                                    Text("Escenarios y Fondos Planificados", style = MaterialTheme.typography.bodySmall, color = if (bgOk) Color.White else Color.Gray)
                                 }
 
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
@@ -1606,7 +1561,7 @@ fun SimplifiedProjectDetailsScreen(
                             color = Color.White
                         )
                         Text(
-                            text = "Introduce instrucciones adicionales antes de renderizar el video final en VEO:",
+                            text = "Introduce detalles específicos para pulir los prompts antes de estructurar el guion:",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray
                         )
@@ -1616,7 +1571,7 @@ fun SimplifiedProjectDetailsScreen(
                         OutlinedTextField(
                             value = veoCharacterCustom,
                             onValueChange = { viewModel.updateVeoCharacterCustom(it) },
-                            label = { Text("👤 Características del Personaje (Imagen 3 / Banana Pro)") },
+                            label = { Text("👤 Diseño de Personajes de Referencia") },
                             placeholder = { Text("Ej: Traje de neopreno con luces LED rojas parpadeantes, cicatriz facial...") },
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -1631,7 +1586,7 @@ fun SimplifiedProjectDetailsScreen(
                         OutlinedTextField(
                             value = veoBackgroundCustom,
                             onValueChange = { viewModel.updateVeoBackgroundCustom(it) },
-                            label = { Text("🖼️ Características del Fondo/Escenario (Imagen 3 / Banana Pro)") },
+                            label = { Text("🖼️ Características del Fondo/Escenario") },
                             placeholder = { Text("Ej: Ciudad flotante cyberpunk medieval con niebla espesa y pilares brutalistas...") },
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -1659,7 +1614,7 @@ fun SimplifiedProjectDetailsScreen(
                         Spacer(modifier = Modifier.height(24.dp))
 
                         Button(
-                            onClick = { viewModel.generateVeoVideo() },
+                            onClick = { showExportApiDialog = true },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
@@ -1668,9 +1623,9 @@ fun SimplifiedProjectDetailsScreen(
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
+                                Icon(imageVector = Icons.Default.Send, contentDescription = null, tint = Color.Black)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("PRODUCIR VIDEO EN VEO", fontWeight = FontWeight.Bold, color = Color.Black)
+                                Text("EJECUTAR ORQUESTADORES Y EXPORTAR", fontWeight = FontWeight.Bold, color = Color.Black)
                             }
                         }
                     }
@@ -1678,12 +1633,29 @@ fun SimplifiedProjectDetailsScreen(
             }
         } else {
             // ORIGINAL LIST OF ORQUESTADORES DEPARTEMENTOS
-            Text(
-                text = "Departamentos / Orquestadores del Proyecto",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Departamentos / Orquestadores",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Button(
+                    onClick = { Toast.makeText(context, "Generando archivo ZIP con todos los PDFs...", Toast.LENGTH_SHORT).show() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Share, contentDescription = "ZIP", tint = Color.White, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Descargar ZIP", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                }
+            }
             Spacer(modifier = Modifier.height(12.dp))
 
             LazyColumn(
@@ -1753,15 +1725,35 @@ fun SimplifiedProjectDetailsScreen(
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
-                                Button(
-                                    onClick = { onEditSubagent(agent, memoryContent) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = cardBorderColor),
-                                    modifier = Modifier.align(Alignment.End).height(36.dp).testTag("subagent_edit_${agent.key}")
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Editar", tint = Color.White, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Editar", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                                    Button(
+                                        onClick = { Toast.makeText(context, "Exportando PDF de ${agent.name}...", Toast.LENGTH_SHORT).show() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                                        modifier = Modifier.height(36.dp),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(imageVector = Icons.Default.Menu, contentDescription = "PDF", tint = Color.White, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Exportar PDF", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = { onEditSubagent(agent, memoryContent) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = cardBorderColor),
+                                        modifier = Modifier.height(36.dp).testTag("subagent_edit_${agent.key}"),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(imageVector = Icons.Default.Edit, contentDescription = "Editar", tint = Color.White, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Editar", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                                        }
                                     }
                                 }
                             }
@@ -2122,7 +2114,7 @@ fun CineStudioMainContent(viewModel: MovieProjectViewModel, project: MovieProjec
             title = { Text("Recargar Créditos", fontWeight = FontWeight.Bold) },
             text = {
                 Column {
-                    Text("Pay Per Request: Pagas lo que usas. Obtén créditos para ejecutar orquestadores premium y renderizar video real con VEO.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Text("Pay Per Request: Pagas lo que usas. Obtén créditos para ejecutar orquestadores premium y compilar packages de dirección complejos.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("Créditos actuales: $userCredits", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(16.dp))

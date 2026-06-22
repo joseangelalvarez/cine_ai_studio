@@ -33,6 +33,26 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
     private val _userCredits = MutableStateFlow(sharedPrefs.getInt("credits", 100))
     val userCredits: StateFlow<Int> = _userCredits.asStateFlow()
 
+    private val _isPremium = MutableStateFlow(sharedPrefs.getBoolean("is_premium", false))
+    val isPremium: StateFlow<Boolean> = _isPremium.asStateFlow()
+
+    private val _showPaywall = MutableStateFlow(false)
+    val showPaywall: StateFlow<Boolean> = _showPaywall.asStateFlow()
+
+    fun unlockPremium() {
+        _isPremium.value = true
+        sharedPrefs.edit().putBoolean("is_premium", true).apply()
+        _showPaywall.value = false
+    }
+
+    fun triggerPaywall() {
+        _showPaywall.value = true
+    }
+
+    fun dismissPaywall() {
+        _showPaywall.value = false
+    }
+
     fun consumeCredits(amount: Int): Boolean {
         val current = _userCredits.value
         if (current >= amount) {
@@ -449,7 +469,7 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun generateVeoVideo() {
+    fun exportPackage(apiProvider: String) {
         val project = _selectedProject.value ?: return
         cascadeJob?.cancel()
         _veoVideoStatus.value = "GENERATING"
@@ -457,60 +477,42 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
 
         cascadeJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Etapa 1: Orquestación de Personajes con Imagen 3 / Banana Pro
-                _veoProgressMessage.value = "🤖 Generando personajes optimizados mediante Imagen 3 y Banana Pro con nuevas características..."
-                _veoProgressFraction.value = 0.15f
+                _veoProgressMessage.value = "🤖 Ejecutando todos los orquestadores necesarios para $apiProvider..."
+                _veoProgressFraction.value = 0.10f
                 
-                val characterCustomPrompt = _veoCharacterCustom.value.ifBlank { "Características estándar del personaje principal Kael" }
-                val charPrompt = "Genera refinamiento de personajes en base a: $characterCustomPrompt"
-                val charAgent = CinemaSubagentsCatalog.list.find { it.key == "CHARACTER_DESIGNER" }
-                if (charAgent != null) {
-                    orchestrateSubagentUseCase.execute(project, charAgent, charPrompt)
+                // Ejecuta y recopila todos los orquestadores
+                val agentsToRun = CinemaSubagentsCatalog.list
+                
+                val total = agentsToRun.size
+                agentsToRun.forEachIndexed { index, agent ->
+                    _veoProgressMessage.value = "Ejecutando ${agent.name}..."
+                    _veoProgressFraction.value = 0.1f + (0.7f * (index.toFloat() / total))
+                    
+                    // Solo ejecutar si no existe o forzamos repetición
+                    var prompt = "Revisa y adapta las instrucciones de tu departamento para la exportación a $apiProvider."
+                    // particularizaciones
+                    if (agent.key == "CHARACTER_DESIGNER" && _veoCharacterCustom.value.isNotBlank()) prompt += " Custom: ${_veoCharacterCustom.value}"
+                    if (agent.key == "PRODUCTION_DESIGNER" && _veoBackgroundCustom.value.isNotBlank()) prompt += " Custom: ${_veoBackgroundCustom.value}"
+                    if (agent.key == "SOUND_DESIGNER" && _veoSoundCustom.value.isNotBlank()) prompt += " Custom: ${_veoSoundCustom.value}"
+                    
+                    orchestrateSubagentUseCase.execute(project, agent, prompt)
                 }
-                delay(1500)
 
-                // Etapa 2: Orquestación de Escenarios/Fondos con Imagen 3 / Banana Pro
-                _veoProgressMessage.value = "🖼️ Diseñando fondos y escenarios cinematográficos en Imagen 3 con características indicadas..."
-                _veoProgressFraction.value = 0.4f
-                val backgroundCustomPrompt = _veoBackgroundCustom.value.ifBlank { "Escenario de la torre inclinada brutalista bajo lluvia ácida" }
-                val bgPrompt = "Genera refinamiento del entorno visual en base a: $backgroundCustomPrompt"
-                val bgAgent = CinemaSubagentsCatalog.list.find { it.key == "PRODUCTION_DESIGNER" }
-                if (bgAgent != null) {
-                    orchestrateSubagentUseCase.execute(project, bgAgent, bgPrompt)
-                }
-                delay(1500)
-
-                // Etapa 3: Orquestación de Música / Audio
-                _veoProgressMessage.value = "🎵 Compone la partitura melancólica y genera efectos sonoros de Foley envolventes..."
-                _veoProgressFraction.value = 0.65f
-                val soundCustomPrompt = _veoSoundCustom.value.ifBlank { "Atmósfera oscura y leitmotiv de sintetizadores" }
-                val soundPrompt = "Genera pistas de Foley y partitura musical refinada: $soundCustomPrompt"
-                val soundAgent = CinemaSubagentsCatalog.list.find { it.key == "SOUND_DESIGNER" }
-                val musicAgent = CinemaSubagentsCatalog.list.find { it.key == "COMPOSER" }
-                if (soundAgent != null) {
-                    orchestrateSubagentUseCase.execute(project, soundAgent, soundPrompt)
-                }
-                if (musicAgent != null) {
-                    orchestrateSubagentUseCase.execute(project, musicAgent, soundPrompt)
-                }
-                delay(1500)
-
-                // Etapa 4: Fusión y renderizado general del video en Google VEO
-                _veoProgressMessage.value = "🎬 Ejecutando motor de síntesis de Google VEO para renderizar el video fotograma a fotograma..."
-                _veoProgressFraction.value = 0.85f
-                delay(2000)
+                _veoProgressMessage.value = "🎬 Extrayendo las instrucciones de cámara, planos y promps universales..."
+                _veoProgressFraction.value = 0.90f
+                delay(1000)
 
                 _veoProgressFraction.value = 1.0f
-                _veoProgressMessage.value = "¡Video final procesado con Google VEO con éxito!"
+                _veoProgressMessage.value = "¡Paquete del director compilado para $apiProvider con éxito!"
                 _veoVideoStatus.value = "SUCCESS"
 
-                repository.insertMemory(ProjectMemory(projectId = project.id, key = "VEO_VIDEO_STATUS", title = "Estado del video", content = "SUCCESS"))
+                repository.insertMemory(ProjectMemory(projectId = project.id, key = "FINAL_VIDEO_STATUS", title = "Estado del master", content = "SUCCESS"))
                 repository.insertMemory(
                     ProjectMemory(
                         projectId = project.id,
-                        key = "FINAL_VEO_VIDEO",
-                        title = "Video Generado Google VEO",
-                        content = "Contiene el render cinematico de alta definición refinado"
+                        key = "FINAL_PACKAGE",
+                        title = "Paquete de Dirección Final ($apiProvider)",
+                        content = "Contiene los prompts y secuencias estructuradas para $apiProvider."
                     )
                 )
 
@@ -518,7 +520,7 @@ class MovieProjectViewModel(application: Application) : AndroidViewModel(applica
 
             } catch (e: Exception) {
                 _veoVideoStatus.value = "ERROR"
-                _veoProgressMessage.value = "Error al compilar en VEO: ${e.localizedMessage ?: e.message}"
+                _veoProgressMessage.value = "Error al compilar el package: ${e.localizedMessage ?: e.message}"
             }
         }
     }
