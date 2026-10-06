@@ -1,25 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Cine AI Studio (React & TypeScript)
 
-# Run and deploy your AI Studio app
+Orquestador de cine con subagentes de IA especializados por departamento y memoria central compartida.
 
-> 📚 **Documentación del stack**: ver [STACK_TECNOLOGICO.md](STACK_TECNOLOGICO.md) — arquitectura completa (Web multi-rol + helper local + Android), capa de IA solo-Google (Gemini/Veo/Nano Banana) y flujo del QA visual.
-> 📚 **Arquitectura web detallada**: ver [web/ARQUITECTURA.md](web/ARQUITECTURA.md)
+Reescrito desde la versión Android original a una aplicación web moderna en React, TypeScript y Tailwind CSS con soporte para Gemini API y modo de simulación offline resiliente (L5).
 
+## Características principales
 
-This contains everything you need to run your app locally.
+- **7 Capas de Producción & 24 Subagentes Especializados**:
+  - **Capa 0 – Orquestador General**: Director Ejecutivo / Showrunner IA
+  - **Capa 1 – Narrativa**: Guionista Principal, Script Doctor, Continuista, Director de Escena
+  - **Capa 2 – Visual**: Director de Arte, Diseñador de Personajes, Supervisor de Personajes, Diseñador de Producción, DoP, Gaffer, Storyboarder, Layout Artist
+  - **Capa 3 – Animación y VFX**: Animador Líder, Animador Secundario, Supervisor de Coherencia Temporal, Supervisor VFX, Director Técnico de Simulación
+  - **Capa 4 – Sonido**: Compositor Musical, Diseñador de Sonido, Mezclador de Audio
+  - **Capa 5 – Postproducción**: Editor/Montador, Colorista, Supervisor de Mastering
+  - **Capa 6 – Producción y Control**: Jefe de Producción, Coordinador de Pipeline, Control de Calidad
+- **Asistente de Creación Paso a Paso**: Configuración de título, duración aproximada, estilo visual e idea base cinematográfica.
+- **Flujo de Ejecución Reactivo**: Medidor de progreso en tiempo real con indicador porcentual, gestión de errores con fallback a simulación segura y confirmación de renderizado audiovisual interactivo.
+- **Storyboard & Extracción de Prompts**: Prompts optimizados para generadores externos de video (Runway Gen-3, Luma Dream Machine, Kling AI, Sora) con previsualización de encuadres y copia al portapapeles.
+- **Gestión de Memoria Central & Versionado**: Auditoría de revisiones históricas de la biblia del proyecto, logs de ejecución y métricas de telemetría.
+- **Edición con Actualización en Cascada**: Modificaciones a cualquier departamento propagan automáticamente la consistencia a los orquestadores dependientes posteriores.
+- **Control de Créditos & Estado Pro**: Sistema integrado de créditos por ejecución y pantalla de desbloqueo premium.
 
-View your app in AI Studio: https://ai.studio/apps/99c38925-facd-474b-9774-2dd58639b928
+## Ejecución Local
 
-## Run Locally
+```bash
+# Instalar dependencias
+npm install
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+# Iniciar servidor de desarrollo en puerto 3000
+npm run dev
 
-
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+# Compilar para producción
+npm run build
+```
