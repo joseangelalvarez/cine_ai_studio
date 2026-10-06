@@ -1,0 +1,35 @@
+{
+  "name": "cine-ai-studio-web",
+  "description": "Web app version of Cine AI Studio with multi-provider AI support",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "video:models": "node helper/video-helper.mjs list-models",
+    "video:state": "node helper/video-helper.mjs state",
+    "video:workflow": "node helper/video-helper.mjs set-workflow",
+    "video:helper": "node helper/video-helper.mjs serve",
+    "video:helper:root": "node ..\\helper\\video-helper.mjs serve"
+  },
+  "keywords": [
+    "cine",
+    "ai",
+    "cinema",
+    "preproduction",
+    "typescript",
+    "vite"
+  ],
+  "author": "Angel (Copilot)",
+  "devDependencies": {
+    "terser": "^5.48.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "axios": "^1.18.0",
+    "zustand": "^5.0.14"
+  }
+}

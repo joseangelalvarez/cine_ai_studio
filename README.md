@@ -4,6 +4,10 @@
 
 # Run and deploy your AI Studio app
 
+> 📚 **Documentación del stack**: ver [STACK_TECNOLOGICO.md](STACK_TECNOLOGICO.md) — arquitectura completa (Web multi-rol + helper local + Android), capa de IA solo-Google (Gemini/Veo/Nano Banana) y flujo del QA visual.
+> 📚 **Arquitectura web detallada**: ver [web/ARQUITECTURA.md](web/ARQUITECTURA.md)
+
+
 This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/99c38925-facd-474b-9774-2dd58639b928
