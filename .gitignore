@@ -4,3 +4,12 @@ dist
 .DS_Store
 *.local
 .build-outputs
+
+# Local build artifacts (Gradle)
+.gradle/
+
+# Local IDE configuration
+.vscode/
+
+# Local runtime artifacts
+web/
