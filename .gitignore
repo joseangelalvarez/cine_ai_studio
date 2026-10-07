@@ -13,3 +13,7 @@ dist
 
 # Local runtime artifacts
 web/
+
+# Local dev server logs
+.server.out.log
+.server.err.log
