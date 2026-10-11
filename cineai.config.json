@@ -1,0 +1,35 @@
+{
+  "llm": {
+    "premium": { "provider": "google", "model": "gemini-3.1-pro-preview" },
+    "standard": { "provider": "google", "model": "gemini-3.8-flash" },
+    "economic": { "provider": "google", "model": "gemini-3.8-flash" },
+    "agentOverrides": {
+      "SHOWRUNNER": { "provider": "google", "model": "gemini-3.8-flash" },
+      "GUIONISTA": { "provider": "google", "model": "gemini-3.8-flash" },
+      "DIRECTOR_ARTE": { "provider": "google", "model": "gemini-3.8-flash" }
+    }
+  },
+  "image": {
+    "characters": { "provider": "google", "model": "imagen-3.0-generate-002" },
+    "backgrounds": { "provider": "google", "model": "imagen-3.0-generate-002" },
+    "storyboard": { "provider": "google", "model": "imagen-3.0-generate-002", "enabled": true }
+  },
+  "music": {
+    "provider": "google",
+    "model": "lyria-3-clip-preview"
+  },
+  "audio": {
+    "provider": "google",
+    "model": "gemini-3.8-flash-lite-tts",
+    "voice": "Aoede"
+  },
+  "video": {
+    "primary": { "provider": "google", "model": "veo-3.1-generate-preview", "maxShots": 2 },
+    "exportCompiler": {
+      "engine": "seedance-2.0",
+      "aspectRatio": "2.39:1",
+      "motionStrength": "cinematic",
+      "multiShotSupported": true
+    }
+  }
+}

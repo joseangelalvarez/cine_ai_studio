@@ -51,7 +51,7 @@ export const OrchestratorContentEditor: React.FC<OrchestratorContentEditorProps>
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             {agent.duties.map((duty, idx) => (
-              <div key={idx} className="flex items-start gap-1.5 text-xs text-slate-300">
+              <div key={`agent_duty_${agent.key}_${idx}`} className="flex items-start gap-1.5 text-xs text-slate-300">
                 <span className="text-amber-400 font-bold">•</span>
                 <span>{duty}</span>
               </div>

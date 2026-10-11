@@ -7,10 +7,12 @@ import {
   TelemetryMetric,
   CinemaSubagent,
   AppScreen,
+  ProviderSettings,
 } from './types';
 import { StorageService } from './storage';
 import { CINEMA_SUBAGENTS_CATALOG } from './catalog';
-import { orchestrateSubagentApi, exportPackageApi } from './api';
+import { orchestrateSubagentApi, compilePromptsApi } from './api';
+import { buildSubagentPrompt } from './utils/promptBuilder';
 
 import { Header } from './components/Header';
 import { HomeScreen } from './components/HomeScreen';
@@ -20,10 +22,14 @@ import { CreationProgressScreen } from './components/CreationProgressScreen';
 import { ProjectListScreen } from './components/ProjectListScreen';
 import { ProjectDetailsScreen } from './components/ProjectDetailsScreen';
 import { OrchestratorContentEditor } from './components/OrchestratorContentEditor';
-import { CreditsModal } from './components/CreditsModal';
-import { PaywallModal } from './components/PaywallModal';
-import { ExportApiModal } from './components/ExportApiModal';
-import { SocialMediaModal } from './components/SocialMediaModal';
+import { ProviderSettingsModal } from './components/ProviderSettingsModal';
+import { TokensAndCostsModal } from './components/TokensAndCostsModal';
+import { PitchBibleModal } from './components/PitchBibleModal';
+import { CharacterApprovalModal } from './components/CharacterApprovalModal';
+import { PromptEngineerModal } from './components/PromptEngineerModal';
+import { CascadePropagationModal, CascadeStep } from './components/CascadePropagationModal';
+import { RenderStudioModal } from './components/RenderStudioModal';
+import { EditProjectModal } from './components/EditProjectModal';
 
 export const App: React.FC = () => {
   // Navigation State
@@ -37,27 +43,35 @@ export const App: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [metrics, setMetrics] = useState<TelemetryMetric[]>([]);
 
-  // Credits & Premium
-  const [credits, setCredits] = useState<number>(100);
-  const [isPremium, setIsPremium] = useState<boolean>(false);
+  // Multi-Provider & Model Settings State
+  const [providerSettings, setProviderSettings] = useState<ProviderSettings>(() =>
+    StorageService.getProviderSettings()
+  );
+  const [showProviderSettingsModal, setShowProviderSettingsModal] = useState<boolean>(false);
+  const [showTokensCostsModal, setShowTokensCostsModal] = useState<boolean>(false);
 
   // Modals
-  const [showCreditsModal, setShowCreditsModal] = useState<boolean>(false);
-  const [showPaywallModal, setShowPaywallModal] = useState<boolean>(false);
-  const [showExportApiModal, setShowExportApiModal] = useState<boolean>(false);
-  const [showSocialModal, setShowSocialModal] = useState<boolean>(false);
+  const [showPitchBibleModal, setShowPitchBibleModal] = useState<boolean>(false);
+  const [showCharacterApprovalModal, setShowCharacterApprovalModal] = useState<boolean>(false);
+  const [showPromptEngineerModal, setShowPromptEngineerModal] = useState<boolean>(false);
+  const [showRenderStudioModal, setShowRenderStudioModal] = useState<boolean>(false);
+  const [showEditProjectModal, setShowEditProjectModal] = useState<boolean>(false);
+  const [showCascadeModal, setShowCascadeModal] = useState<boolean>(false);
+  const [cascadeSteps, setCascadeSteps] = useState<CascadeStep[]>([]);
+  const [cascadeStepIndex, setCascadeStepIndex] = useState<number>(0);
+  const [isCascadeComplete, setIsCascadeComplete] = useState<boolean>(false);
+  const [cascadeError, setCascadeError] = useState<string | null>(null);
+  const [isActivatingAllAgents, setIsActivatingAllAgents] = useState<boolean>(false);
 
   // Wizard State
   const [wizardTitle, setWizardTitle] = useState<string>('');
   const [wizardDuration, setWizardDuration] = useState<string>('3 minutos');
   const [wizardArtStyle, setWizardArtStyle] = useState<string>('Cinemático Ultra-Realista');
   const [wizardIdea, setWizardIdea] = useState<string>('');
-  const [useSecureGateway, setUseSecureGateway] = useState<boolean>(true);
 
   // Pipeline Execution Progress State
   const [progressStepIndex, setProgressStepIndex] = useState<number>(0);
   const [progressMessage, setProgressMessage] = useState<string>('Iniciando motor de preproducción...');
-  const [isRenderingPromptVisible, setIsRenderingPromptVisible] = useState<boolean>(false);
   const [renderingStatus, setRenderingStatus] = useState<string>('');
   const [lastGenerationError, setLastGenerationError] = useState<string | null>(null);
 
@@ -65,20 +79,12 @@ export const App: React.FC = () => {
   const [activeSubagentToEdit, setActiveSubagentToEdit] = useState<CinemaSubagent | null>(null);
   const [editedContentText, setEditedContentText] = useState<string>('');
 
-  // Veo Video Storyboard Metadata
-  const [veoCharacterCustom, setVeoCharacterCustom] = useState<string>('');
-  const [veoBackgroundCustom, setVeoBackgroundCustom] = useState<string>('');
-  const [veoSoundCustom, setVeoSoundCustom] = useState<string>('');
-  const [veoVideoStatus, setVeoVideoStatus] = useState<string>('NOT_STARTED');
-
   const cancelExecutionRef = useRef<boolean>(false);
 
   // Load initial data
   useEffect(() => {
     const loadedProjects = StorageService.getProjects();
     setProjects(loadedProjects);
-    setCredits(StorageService.getCredits());
-    setIsPremium(StorageService.getIsPremium());
   }, []);
 
   // Sync project memories whenever selectedProject changes
@@ -89,43 +95,34 @@ export const App: React.FC = () => {
       setRevisions(StorageService.getRevisions(selectedProject.id));
       setAuditLogs(StorageService.getAuditLogs(selectedProject.id));
       setMetrics(StorageService.getMetrics(selectedProject.id));
-
-      const statusMem = pMem.find((m) => m.key === 'VEO_VIDEO_STATUS');
-      const charMem = pMem.find((m) => m.key === 'VEO_CHARACTER_CUSTOM');
-      const bgMem = pMem.find((m) => m.key === 'VEO_BACKGROUND_CUSTOM');
-      const soundMem = pMem.find((m) => m.key === 'VEO_SOUND_CUSTOM');
-
-      setVeoVideoStatus(statusMem?.content || 'NOT_STARTED');
-      setVeoCharacterCustom(charMem?.content || '');
-      setVeoBackgroundCustom(bgMem?.content || '');
-      setVeoSoundCustom(soundMem?.content || '');
     } else {
       setMemories([]);
       setRevisions([]);
       setAuditLogs([]);
       setMetrics([]);
     }
-  }, [selectedProject]);
+  }, [selectedProject?.id]);
 
-  // Handle Home Create Project Click
-  const handleHomeCreateProject = () => {
-    if (projects.length > 0 && !isPremium) {
-      setShowPaywallModal(true);
-    } else {
-      setWizardTitle('');
-      setWizardDuration('3 minutos');
-      setWizardArtStyle('Cinemático Ultra-Realista');
-      setWizardIdea('');
-      setCurrentScreen('CREATE_WIZARD_STEP1');
-    }
+  // Navigate to Home
+  const handleNavigateHome = () => {
+    setCurrentScreen('HOME');
+    setActiveSubagentToEdit(null);
   };
 
-  // Start Preproduction Linear Execution
+  // Open Create Wizard Step 1
+  const handleHomeCreateProject = () => {
+    setWizardTitle('');
+    setWizardDuration('3 minutos');
+    setWizardArtStyle('Cinemático Ultra-Realista');
+    setWizardIdea('');
+    setCurrentScreen('CREATE_WIZARD_STEP1');
+  };
+
+  // Start Preproduction Execution
   const runPreproductionSequence = async (project: MovieProject) => {
     cancelExecutionRef.current = false;
     setProgressStepIndex(0);
-    setIsRenderingPromptVisible(false);
-    setRenderingStatus('');
+    setRenderingStatus('PROCESSING');
     setLastGenerationError(null);
     setCurrentScreen('CREATION_PROGRESS');
 
@@ -136,27 +133,29 @@ export const App: React.FC = () => {
 
       const agent = preprodAgents[i];
       setProgressStepIndex(i);
-      setProgressMessage(`Ejecutando ${agent.name} (${agent.layer})...`);
+      setProgressMessage(`Llamando a ${agent.name} (${agent.layer})...`);
 
       try {
         const currentMems = StorageService.getMemories(project.id);
+        const dynamicPrompt = buildSubagentPrompt(agent, project);
         const res = await orchestrateSubagentApi(
           project,
           agent,
-          agent.suggestedPrompt,
+          dynamicPrompt,
           currentMems,
-          useSecureGateway
+          false,
+          providerSettings
         );
 
         if (res.success && res.content) {
-          StorageService.insertMemory({
+          StorageService.saveMemory({
             projectId: project.id,
             key: agent.key,
             title: `${agent.name} (${agent.layer})`,
             content: res.content,
           });
 
-          StorageService.insertRevision({
+          StorageService.saveRevision({
             projectId: project.id,
             key: agent.key,
             title: `${agent.name} (${agent.layer})`,
@@ -166,37 +165,206 @@ export const App: React.FC = () => {
             correlationId: `corr_${Math.random().toString(36).substring(2, 10)}`,
           });
 
-          StorageService.insertAuditLog({
+          StorageService.saveAuditLog({
             projectId: project.id,
             correlationId: `corr_${Math.random().toString(36).substring(2, 10)}`,
             actor: agent.key,
             action: 'ORCHESTRATE_COMPLETED',
-            details: `Entregable completado. Latencia: ${res.latencyMs}ms`,
+            details: `Entregable completado. Latencia: ${res.latencyMs}ms con modelo ${res.model || providerSettings.textModel}`,
+          });
+
+          // Track real tokens and cost
+          const inputTok = res.usage?.inputTokens || Math.round(dynamicPrompt.length / 3.8);
+          const outputTok = res.usage?.outputTokens || Math.round(res.content.length / 3.8);
+          StorageService.saveMetric({
+            projectId: project.id,
+            correlationId: `corr_${Math.random().toString(36).substring(2, 10)}`,
+            metricName: 'ORCHESTRATION_COST',
+            keyIdentifier: agent.key,
+            metricValue: res.estimatedCost || 0.0001,
+          });
+          StorageService.saveMetric({
+            projectId: project.id,
+            correlationId: `corr_${Math.random().toString(36).substring(2, 10)}`,
+            metricName: 'ORCHESTRATION_TOKENS',
+            keyIdentifier: agent.key,
+            metricValue: inputTok + outputTok,
           });
         }
       } catch (err: any) {
         setLastGenerationError(err?.message || 'Error en la llamada de orquestación');
         setProgressMessage(`Error al ejecutar ${agent.name}: ${err?.message}`);
+        setRenderingStatus('ERROR');
         return;
       }
 
-      // Aesthetic pacing delay
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
     if (!cancelExecutionRef.current) {
-      setProgressMessage('Preproducción completada con éxito. Listo para fase de renderizado.');
-      setIsRenderingPromptVisible(true);
-      // Refresh memory state
-      setMemories(StorageService.getMemories(project.id));
+      setProgressMessage('Compilando especificaciones de video para Seedance 2.0 y Google Veo...');
+      const finalMems = StorageService.getMemories(project.id);
+      try {
+        await compilePromptsApi(project, finalMems);
+      } catch (compileErr) {
+        console.warn('Initial prompt compilation notice:', compileErr);
+      }
+      setRenderingStatus('COMPLETED');
+      setMemories(finalMems);
+      setSelectedProject(project);
     }
+  };
+
+  // Full Cascade Propagation from Showrunner to downstream departments
+  const handlePropagateShowrunnerCascade = async (showrunnerContent: string) => {
+    if (!selectedProject) return;
+
+    const priorityKeys = [
+      'GUIONISTA',
+      'SCRIPT_DOCTOR',
+      'CONTINUISTA',
+      'DIRECTOR_ESCENA',
+      'DIRECTOR_ARTE',
+      'CHARACTER_DESIGNER',
+      'PRODUCTION_DESIGNER',
+      'DOP',
+      'GAFFER',
+      'COMPOSER',
+      'SOUND_DESIGNER',
+    ];
+
+    const currentMems = StorageService.getMemories(selectedProject.id);
+    const targets = CINEMA_SUBAGENTS_CATALOG.filter(
+      (a) =>
+        priorityKeys.includes(a.key) ||
+        currentMems.some((m) => m.key === a.key && m.content.trim().length > 0)
+    );
+
+    const initialSteps: CascadeStep[] = targets.map((agent) => ({
+      key: agent.key,
+      name: agent.name,
+      layer: agent.layer,
+      status: 'PENDING',
+    }));
+
+    setCascadeSteps(initialSteps);
+    setCascadeStepIndex(0);
+    setIsCascadeComplete(false);
+    setCascadeError(null);
+    setShowCascadeModal(true);
+
+    for (let i = 0; i < targets.length; i++) {
+      const agent = targets[i];
+      setCascadeStepIndex(i);
+      setCascadeSteps((prev) =>
+        prev.map((s, idx) => (idx === i ? { ...s, status: 'RUNNING' } : s))
+      );
+
+      try {
+        const curMems = StorageService.getMemories(selectedProject.id);
+        const cascadePrompt = `DIRECTIVA ACTUALIZADA DEL SHOWRUNNER:\n${showrunnerContent}\n\nAdapta y regenera el entregable oficial de tu departamento (${agent.name} - ${agent.layer}) para alinearse con esta visión del Showrunner en "${selectedProject.title}".\nFunciones: ${(agent.duties || []).join(', ')}.`;
+
+        const res = await orchestrateSubagentApi(
+          selectedProject,
+          agent,
+          cascadePrompt,
+          curMems,
+          false,
+          providerSettings
+        );
+
+        if (res.success && res.content) {
+          StorageService.saveMemory({
+            projectId: selectedProject.id,
+            key: agent.key,
+            title: `${agent.name} (${agent.layer})`,
+            content: res.content,
+          });
+
+          const revs = StorageService.getRevisions(selectedProject.id).filter((r) => r.key === agent.key);
+          StorageService.saveRevision({
+            projectId: selectedProject.id,
+            key: agent.key,
+            title: `${agent.name} (${agent.layer})`,
+            content: res.content,
+            version: revs.length + 1,
+            author: 'CASCADE_SHOWRUNNER',
+            correlationId: `corr_casc_${Math.random().toString(36).substring(2, 8)}`,
+          });
+        }
+
+        setCascadeSteps((prev) =>
+          prev.map((s, idx) => (idx === i ? { ...s, status: 'COMPLETED' } : s))
+        );
+      } catch (err: any) {
+        setCascadeSteps((prev) =>
+          prev.map((s, idx) => (idx === i ? { ...s, status: 'ERROR', details: err?.message } : s))
+        );
+      }
+
+      await new Promise((r) => setTimeout(r, 450));
+    }
+
+    setIsCascadeComplete(true);
+    setMemories(StorageService.getMemories(selectedProject.id));
+    setRevisions(StorageService.getRevisions(selectedProject.id));
+  };
+
+  // Activate all 24 subagents in the studio
+  const handleActivateAllSubagents = async () => {
+    if (!selectedProject) return;
+    setIsActivatingAllAgents(true);
+
+    const currentMems = StorageService.getMemories(selectedProject.id);
+    const unexecuted = CINEMA_SUBAGENTS_CATALOG.filter(
+      (agent) => !currentMems.some((m) => m.key === agent.key && m.content.trim().length > 0)
+    );
+
+    for (let i = 0; i < unexecuted.length; i++) {
+      const agent = unexecuted[i];
+      try {
+        const curMems = StorageService.getMemories(selectedProject.id);
+        const prompt = buildSubagentPrompt(agent, selectedProject);
+        const res = await orchestrateSubagentApi(
+          selectedProject,
+          agent,
+          prompt,
+          curMems,
+          false,
+          providerSettings
+        );
+        if (res.success && res.content) {
+          StorageService.saveMemory({
+            projectId: selectedProject.id,
+            key: agent.key,
+            title: `${agent.name} (${agent.layer})`,
+            content: res.content,
+          });
+          StorageService.saveRevision({
+            projectId: selectedProject.id,
+            key: agent.key,
+            title: `${agent.name} (${agent.layer})`,
+            content: res.content,
+            version: 1,
+            author: agent.key,
+            correlationId: `corr_full_${Math.random().toString(36).substring(2, 8)}`,
+          });
+        }
+      } catch (e) {
+        console.warn('Activation error for agent:', agent.key, e);
+      }
+      setMemories(StorageService.getMemories(selectedProject.id));
+      await new Promise((r) => setTimeout(r, 350));
+    }
+
+    setIsActivatingAllAgents(false);
   };
 
   // Start Generation from Wizard Step 2
   const handleStartGenerationFromWizard = async () => {
-    const newProject = StorageService.insertProject({
+    const newProject = StorageService.saveProject({
       title: wizardTitle,
-      genre: 'Drama / Ciencia Ficción',
+      genre: 'Drama / Cine',
       artStyle: wizardArtStyle,
       description: wizardIdea,
       targetAudience: 'Público General',
@@ -206,18 +374,17 @@ export const App: React.FC = () => {
     // Populate Showrunner Bible in Capa 0
     const showrunnerBible = `=======================================================
 PROYECTO: "${newProject.title.toUpperCase()}"
-GÉNERO: Drama / Ciencia Ficción
+GÉNERO: Drama / Cine
 ESTILO VISUAL: ${newProject.artStyle}
-AUDIENCIA OBJETIVO: Público General
 DURACIÓN ESTIMADA: ${newProject.duration || '3 minutos'}
 
-SINOPSIS / IDEA CENTRAL DEL VIDEO:
+SINOPSIS / IDEA CENTRAL DEL CREADOR:
 ${newProject.description}
 
-ESTADO DE LA DIRECTIVA:
-Este documento actúa como la Directiva General (Showrunner Bible) para guiar de manera centralizada a todos los subagentes del estudio IA.`;
+DIRECTIVA GENERAL:
+Entregable oficial del Showrunner para guiar la preproducción y renderizado en Cine AI Studio.`;
 
-    StorageService.insertMemory({
+    StorageService.saveMemory({
       projectId: newProject.id,
       key: 'SHOWRUNNER',
       title: 'Showrunner Project Bible (Capa 0 – Orquestador General)',
@@ -231,79 +398,11 @@ Este documento actúa como la Directiva General (Showrunner Bible) para guiar de
     await runPreproductionSequence(newProject);
   };
 
-  // Handle Render Action (All, Video, Audio, None)
-  const handleRenderActionSelected = async (choice: 'ALL' | 'VIDEO' | 'AUDIO' | 'NONE') => {
-    if (!selectedProject) return;
-
-    if (choice === 'NONE') {
-      setRenderingStatus('COMPLETED');
-      return;
-    }
-
-    setIsRenderingPromptVisible(false);
-    setRenderingStatus('GENERATING');
-    setLastGenerationError(null);
-
-    const subagentsList = CINEMA_SUBAGENTS_CATALOG;
-    const renderAgents = choice === 'ALL'
-      ? subagentsList.filter((a) => a.layerId === 3 || a.layerId === 4)
-      : choice === 'VIDEO'
-      ? subagentsList.filter((a) => a.layerId === 3)
-      : subagentsList.filter((a) => a.layerId === 4);
-
-    for (let i = 0; i < renderAgents.length; i++) {
-      const agent = renderAgents[i];
-      setProgressStepIndex(i);
-      setProgressMessage(`Renderizando ${agent.name} (${agent.layer})...`);
-
-      try {
-        const currentMems = StorageService.getMemories(selectedProject.id);
-        const res = await orchestrateSubagentApi(
-          selectedProject,
-          agent,
-          agent.suggestedPrompt,
-          currentMems,
-          useSecureGateway
-        );
-
-        if (res.success && res.content) {
-          StorageService.insertMemory({
-            projectId: selectedProject.id,
-            key: agent.key,
-            title: `${agent.name} (${agent.layer})`,
-            content: res.content,
-          });
-
-          StorageService.insertRevision({
-            projectId: selectedProject.id,
-            key: agent.key,
-            title: `${agent.name} (${agent.layer})`,
-            content: res.content,
-            version: 1,
-            author: agent.key,
-            correlationId: `corr_${Math.random().toString(36).substring(2, 10)}`,
-          });
-        }
-      } catch (err: any) {
-        setLastGenerationError(err?.message || 'Error al renderizar');
-        setProgressMessage(`Error al renderizar ${agent.name}: ${err?.message}`);
-        setRenderingStatus('ERROR');
-        return;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 800));
-    }
-
-    setProgressMessage('¡Proyecto Completado! Generación y renderizado finalizados con éxito.');
-    setRenderingStatus('COMPLETED');
-    setMemories(StorageService.getMemories(selectedProject.id));
-  };
-
   // Subagent update and cascade
   const handleUpdateSubagentMemoryAndCascade = async (key: string, title: string, newContent: string) => {
     if (!selectedProject) return;
 
-    StorageService.insertMemory({
+    StorageService.saveMemory({
       projectId: selectedProject.id,
       key,
       title,
@@ -311,7 +410,7 @@ Este documento actúa como la Directiva General (Showrunner Bible) para guiar de
     });
 
     const existingRevs = StorageService.getRevisions(selectedProject.id).filter((r) => r.key === key);
-    StorageService.insertRevision({
+    StorageService.saveRevision({
       projectId: selectedProject.id,
       key,
       title,
@@ -321,174 +420,81 @@ Este documento actúa como la Directiva General (Showrunner Bible) para guiar de
       correlationId: `corr_edit_${Math.random().toString(36).substring(2, 8)}`,
     });
 
-    // Cascade: run next agent in catalog to adapt to user changes
-    const list = CINEMA_SUBAGENTS_CATALOG;
-    const idx = list.findIndex((a) => a.key === key);
-    if (idx !== -1 && idx + 1 < list.length) {
-      const nextAgent = list[idx + 1];
-      try {
-        const curMems = StorageService.getMemories(selectedProject.id);
-        const res = await orchestrateSubagentApi(
-          selectedProject,
-          nextAgent,
-          `Adapta las directivas de tu departamento tras la actualización en ${title}.`,
-          curMems,
-          useSecureGateway
-        );
-        if (res.success && res.content) {
-          StorageService.insertMemory({
-            projectId: selectedProject.id,
-            key: nextAgent.key,
-            title: `${nextAgent.name} (${nextAgent.layer})`,
-            content: res.content,
-          });
-        }
-      } catch (e) {
-        console.warn('Cascade update error for next agent:', e);
-      }
+    if (key === 'SHOWRUNNER') {
+      setActiveSubagentToEdit(null);
+      setEditedContentText('');
+      await handlePropagateShowrunnerCascade(newContent);
+      return;
     }
 
-    setMemories(StorageService.getMemories(selectedProject.id));
-    setRevisions(StorageService.getRevisions(selectedProject.id));
     setActiveSubagentToEdit(null);
     setEditedContentText('');
+    setMemories(StorageService.getMemories(selectedProject.id));
   };
 
-  // Manual run in workstation
-  const handleExecuteSubagentManually = async (agent: CinemaSubagent, prompt: string) => {
+  // Execute single subagent manually from Tab 2
+  const handleExecuteSubagentManually = async (subagent: CinemaSubagent, prompt: string) => {
     if (!selectedProject) return;
-    const cost = 10;
-    StorageService.consumeCredits(cost);
-    setCredits(StorageService.getCredits());
-
-    const curMems = StorageService.getMemories(selectedProject.id);
-    const res = await orchestrateSubagentApi(selectedProject, agent, prompt, curMems, useSecureGateway);
-
-    if (res.success && res.content) {
-      StorageService.insertMemory({
-        projectId: selectedProject.id,
-        key: agent.key,
-        title: `${agent.name} (${agent.layer})`,
-        content: res.content,
-      });
-
-      const existingRevs = StorageService.getRevisions(selectedProject.id).filter((r) => r.key === agent.key);
-      StorageService.insertRevision({
-        projectId: selectedProject.id,
-        key: agent.key,
-        title: `${agent.name} (${agent.layer})`,
-        content: res.content,
-        version: existingRevs.length + 1,
-        author: agent.key,
-        correlationId: `corr_manual_${Math.random().toString(36).substring(2, 8)}`,
-      });
-
-      StorageService.insertAuditLog({
-        projectId: selectedProject.id,
-        correlationId: `corr_manual_${Math.random().toString(36).substring(2, 8)}`,
-        actor: agent.key,
-        action: 'MANUAL_EXECUTION_COMPLETED',
-        details: `Ejecución completada por consola. Latencia: ${res.latencyMs}ms`,
-      });
-
-      setMemories(StorageService.getMemories(selectedProject.id));
-      setRevisions(StorageService.getRevisions(selectedProject.id));
-      setAuditLogs(StorageService.getAuditLogs(selectedProject.id));
-    }
-  };
-
-  // Export to external video engine
-  const handleConfirmExportPackage = async (provider: string) => {
-    if (!selectedProject) return;
-    setVeoVideoStatus('GENERATING');
 
     try {
-      await exportPackageApi(
+      const curMems = StorageService.getMemories(selectedProject.id);
+      const res = await orchestrateSubagentApi(
         selectedProject,
-        provider,
-        veoCharacterCustom,
-        veoBackgroundCustom,
-        veoSoundCustom
+        subagent,
+        prompt,
+        curMems,
+        false,
+        providerSettings
       );
 
-      StorageService.insertMemory({
-        projectId: selectedProject.id,
-        key: 'VEO_VIDEO_STATUS',
-        title: 'Estado del Motor de Storyboard',
-        content: 'SUCCESS',
-      });
+      if (res.success && res.content) {
+        StorageService.saveMemory({
+          projectId: selectedProject.id,
+          key: subagent.key,
+          title: `${subagent.name} (${subagent.layer})`,
+          content: res.content,
+        });
 
-      StorageService.insertMemory({
-        projectId: selectedProject.id,
-        key: 'FINAL_PACKAGE',
-        title: `Paquete de Dirección Final (${provider})`,
-        content: `Contiene los prompts y secuencias estructuradas para ${provider}.`,
-      });
+        const revs = StorageService.getRevisions(selectedProject.id).filter((r) => r.key === subagent.key);
+        StorageService.saveRevision({
+          projectId: selectedProject.id,
+          key: subagent.key,
+          title: `${subagent.name} (${subagent.layer})`,
+          content: res.content,
+          version: revs.length + 1,
+          author: subagent.key,
+          correlationId: `corr_manual_${Math.random().toString(36).substring(2, 8)}`,
+        });
 
-      setVeoVideoStatus('SUCCESS');
-      setMemories(StorageService.getMemories(selectedProject.id));
+        setMemories(StorageService.getMemories(selectedProject.id));
+      }
     } catch (err: any) {
-      setVeoVideoStatus('ERROR');
-      throw err;
+      alert(`Error al ejecutar ${subagent.name}: ${err?.message || 'Fallo de inferencia'}`);
     }
   };
 
-  // Clear memory
-  const handleClearMemory = () => {
-    if (!selectedProject) return;
-    if (window.confirm('¿Reiniciar todas las memorias del proyecto excepto la Biblia del Showrunner inicial?')) {
-      StorageService.clearMemories(selectedProject.id);
-      const initialBible = `PROYECTO: "${selectedProject.title}"\nGÉNERO: ${selectedProject.genre}\nESTILO VISUAL: ${selectedProject.artStyle}\nSINOPSIS: ${selectedProject.description}`;
-      StorageService.insertMemory({
-        projectId: selectedProject.id,
-        key: 'SHOWRUNNER',
-        title: 'Showrunner Project Bible (Capa 0 – Orquestador General)',
-        content: initialBible,
-      });
-      setMemories(StorageService.getMemories(selectedProject.id));
-    }
-  };
-
-  // Delete Project
+  // Delete project
   const handleDeleteProject = (proj: MovieProject) => {
     StorageService.deleteProject(proj.id);
-    setProjects(StorageService.getProjects());
+    const updated = StorageService.getProjects();
+    setProjects(updated);
     if (selectedProject?.id === proj.id) {
       setSelectedProject(null);
+      setCurrentScreen('HOME');
     }
-  };
-
-  // Credits & Premium Actions
-  const handleBuyCredits = (amount: number) => {
-    StorageService.addCredits(amount);
-    setCredits(StorageService.getCredits());
-    setShowCreditsModal(false);
-  };
-
-  const handleUnlockPremium = () => {
-    StorageService.setIsPremium(true);
-    setIsPremium(true);
-    setShowPaywallModal(false);
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      {/* App Header */}
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
       <Header
-        credits={credits}
-        isPremium={isPremium}
-        onOpenCreditsModal={() => setShowCreditsModal(true)}
-        onOpenPaywallModal={() => setShowPaywallModal(true)}
-        onNavigateHome={() => {
-          setSelectedProject(null);
-          setCurrentScreen('HOME');
-        }}
+        onNavigateHome={handleNavigateHome}
+        providerSettings={providerSettings}
+        onOpenProviderSettings={() => setShowProviderSettingsModal(true)}
+        onOpenTokensCosts={() => setShowTokensCostsModal(true)}
       />
 
-      {/* Main Body Switcher */}
-      <main className="flex-1">
-        {/* Active Subagent Editor Modal / Screen */}
-        {activeSubagentToEdit && (
+      <main className="flex-1 flex flex-col">
+        {activeSubagentToEdit && selectedProject && (
           <OrchestratorContentEditor
             agent={activeSubagentToEdit}
             initialContent={editedContentText}
@@ -496,7 +502,13 @@ Este documento actúa como la Directiva General (Showrunner Bible) para guiar de
               setActiveSubagentToEdit(null);
               setEditedContentText('');
             }}
-            onUpdate={handleUpdateSubagentMemoryAndCascade}
+            onUpdate={(key: string, title: string, newContent: string) =>
+              handleUpdateSubagentMemoryAndCascade(
+                key,
+                title,
+                newContent
+              )
+            }
           />
         )}
 
@@ -525,8 +537,8 @@ Este documento actúa como la Directiva General (Showrunner Bible) para guiar de
           <WizardStep2
             idea={wizardIdea}
             onIdeaChange={setWizardIdea}
-            useSecureGateway={useSecureGateway}
-            onToggleSecureGateway={setUseSecureGateway}
+            providerSettings={providerSettings}
+            onOpenProviderSettings={() => setShowProviderSettingsModal(true)}
             onBack={() => setCurrentScreen('CREATE_WIZARD_STEP1')}
             onStartGeneration={handleStartGenerationFromWizard}
           />
@@ -538,16 +550,13 @@ Este documento actúa como la Directiva General (Showrunner Bible) para guiar de
             progressStepIndex={progressStepIndex}
             totalSteps={CINEMA_SUBAGENTS_CATALOG.filter((a) => a.layerId <= 2).length}
             progressMessage={progressMessage}
-            isRenderingPromptVisible={isRenderingPromptVisible}
             renderingStatus={renderingStatus}
             lastGenerationError={lastGenerationError}
-            useSecureGateway={useSecureGateway}
-            onToggleSecureGateway={setUseSecureGateway}
             onRetry={() => {
               if (selectedProject) runPreproductionSequence(selectedProject);
             }}
-            onRenderActionSelected={handleRenderActionSelected}
             onGoToProject={() => setCurrentScreen('PROJECT_DETAILS')}
+            onOpenProviderSettings={() => setShowProviderSettingsModal(true)}
           />
         )}
 
@@ -555,9 +564,22 @@ Este documento actúa como la Directiva General (Showrunner Bible) para guiar de
           <ProjectListScreen
             projects={projects}
             onBackClick={() => setCurrentScreen('HOME')}
+            onSelectProject={(proj) => {
+              setSelectedProject(proj);
+              setMemories(StorageService.getMemories(proj.id));
+              setRevisions(StorageService.getRevisions(proj.id));
+              setAuditLogs(StorageService.getAuditLogs(proj.id));
+              setMetrics(StorageService.getMetrics(proj.id));
+              setCurrentScreen('PROJECT_DETAILS');
+            }}
             onEditProject={(proj) => {
               setSelectedProject(proj);
+              setMemories(StorageService.getMemories(proj.id));
+              setRevisions(StorageService.getRevisions(proj.id));
+              setAuditLogs(StorageService.getAuditLogs(proj.id));
+              setMetrics(StorageService.getMetrics(proj.id));
               setCurrentScreen('PROJECT_DETAILS');
+              setShowEditProjectModal(true);
             }}
             onDeleteProject={handleDeleteProject}
             onCreateNewProject={handleHomeCreateProject}
@@ -566,85 +588,141 @@ Este documento actúa como la Directiva General (Showrunner Bible) para guiar de
 
         {!activeSubagentToEdit && currentScreen === 'PROJECT_DETAILS' && selectedProject && (
           <ProjectDetailsScreen
+            key={`project_details_${selectedProject.id}`}
             project={selectedProject}
-            memories={memories}
-            revisions={revisions}
-            auditLogs={auditLogs}
-            metrics={metrics}
-            credits={credits}
+            memories={memories.filter((m) => m.projectId === selectedProject.id)}
+            revisions={revisions.filter((r) => r.projectId === selectedProject.id)}
+            auditLogs={auditLogs.filter((a) => a.projectId === selectedProject.id)}
+            metrics={metrics.filter((m) => m.projectId === selectedProject.id)}
+            providerSettings={providerSettings}
+            onOpenProviderSettings={() => setShowProviderSettingsModal(true)}
             onBackClick={() => setCurrentScreen('PROJECT_LIST')}
+            onEditProjectClick={() => setShowEditProjectModal(true)}
             onEditSubagent={(agent, currentContent) => {
               setActiveSubagentToEdit(agent);
               setEditedContentText(currentContent);
             }}
-            onOpenExportModal={() => setShowExportApiModal(true)}
-            onOpenSocialModal={() => setShowSocialModal(true)}
-            onUpdateVeoMetadata={(type, value) => {
-              if (type === 'char') {
-                setVeoCharacterCustom(value);
-                StorageService.insertMemory({
-                  projectId: selectedProject.id,
-                  key: 'VEO_CHARACTER_CUSTOM',
-                  title: 'Instrucción de Personajes',
-                  content: value,
-                });
-              } else if (type === 'bg') {
-                setVeoBackgroundCustom(value);
-                StorageService.insertMemory({
-                  projectId: selectedProject.id,
-                  key: 'VEO_BACKGROUND_CUSTOM',
-                  title: 'Instrucción de Fondos/Escenario',
-                  content: value,
-                });
-              } else {
-                setVeoSoundCustom(value);
-                StorageService.insertMemory({
-                  projectId: selectedProject.id,
-                  key: 'VEO_SOUND_CUSTOM',
-                  title: 'Instrucción de Audio/Música',
-                  content: value,
-                });
-              }
-            }}
-            veoCharacterCustom={veoCharacterCustom}
-            veoBackgroundCustom={veoBackgroundCustom}
-            veoSoundCustom={veoSoundCustom}
-            veoVideoStatus={veoVideoStatus}
+            onOpenPitchBibleModal={() => setShowPitchBibleModal(true)}
+            onOpenRenderStudioModal={() => setShowRenderStudioModal(true)}
+            onOpenCharacterApprovalModal={() => setShowCharacterApprovalModal(true)}
+            onOpenPromptEngineerModal={() => setShowPromptEngineerModal(true)}
+            onPropagateShowrunnerCascade={() =>
+              handlePropagateShowrunnerCascade(
+                memories.find((m) => m.projectId === selectedProject.id && m.key === 'SHOWRUNNER')?.content || ''
+              )
+            }
+            onActivateAllSubagents={handleActivateAllSubagents}
+            isActivatingAllAgents={isActivatingAllAgents}
             onExecuteSubagentManually={handleExecuteSubagentManually}
-            onClearMemory={handleClearMemory}
           />
         )}
       </main>
 
       {/* Global Modals */}
-      <CreditsModal
-        currentCredits={credits}
-        isOpen={showCreditsModal}
-        onClose={() => setShowCreditsModal(false)}
-        onBuyCredits={handleBuyCredits}
-      />
-
-      <PaywallModal
-        isOpen={showPaywallModal}
-        onDismiss={() => setShowPaywallModal(false)}
-        onSubscribe={handleUnlockPremium}
-      />
-
-      <ExportApiModal
-        isOpen={showExportApiModal}
-        onClose={() => setShowExportApiModal(false)}
-        onConfirmExport={handleConfirmExportPackage}
-      />
-
-      <SocialMediaModal
-        isOpen={showSocialModal}
-        onClose={() => setShowSocialModal(false)}
-        onPublishSuccess={() => {
-          // feedback
+      <ProviderSettingsModal
+        isOpen={showProviderSettingsModal}
+        onClose={() => setShowProviderSettingsModal(false)}
+        settings={providerSettings}
+        onSaveSettings={(newSettings) => {
+          StorageService.saveProviderSettings(newSettings);
+          setProviderSettings(newSettings);
         }}
+      />
+
+      <TokensAndCostsModal
+        isOpen={showTokensCostsModal}
+        onClose={() => setShowTokensCostsModal(false)}
+        providerSettings={providerSettings}
+        projectId={selectedProject?.id}
+        onOpenProviderSettings={() => setShowProviderSettingsModal(true)}
+      />
+
+      {selectedProject && (
+        <PitchBibleModal
+          key={`pitch_bible_${selectedProject.id}`}
+          isOpen={showPitchBibleModal}
+          onClose={() => setShowPitchBibleModal(false)}
+          project={selectedProject}
+          memories={memories.filter((m) => Number(m.projectId) === Number(selectedProject.id))}
+          providerSettings={providerSettings}
+        />
+      )}
+
+      {selectedProject && (
+        <CharacterApprovalModal
+          key={`char_approval_${selectedProject.id}`}
+          isOpen={showCharacterApprovalModal}
+          onClose={() => setShowCharacterApprovalModal(false)}
+          project={selectedProject}
+          allMemories={memories.filter((m) => Number(m.projectId) === Number(selectedProject.id))}
+          providerSettings={providerSettings}
+          onApproveAndProceedToRender={() => setShowCharacterApprovalModal(false)}
+          onPostponeRender={() => setShowCharacterApprovalModal(false)}
+        />
+      )}
+
+      {selectedProject && (
+        <PromptEngineerModal
+          key={`prompt_engineer_${selectedProject.id}`}
+          isOpen={showPromptEngineerModal}
+          onClose={() => setShowPromptEngineerModal(false)}
+          project={selectedProject}
+          memories={memories.filter((m) => Number(m.projectId) === Number(selectedProject.id))}
+          providerSettings={providerSettings}
+        />
+      )}
+
+      {selectedProject && (
+        <RenderStudioModal
+          isOpen={showRenderStudioModal}
+          onClose={() => setShowRenderStudioModal(false)}
+          project={selectedProject}
+          providerSettings={providerSettings}
+          onOpenProviderSettings={() => setShowProviderSettingsModal(true)}
+          onStartRender={() => setShowRenderStudioModal(false)}
+          onPostponeRender={() => setShowRenderStudioModal(false)}
+        />
+      )}
+
+      {selectedProject && (
+        <EditProjectModal
+          isOpen={showEditProjectModal}
+          onClose={() => setShowEditProjectModal(false)}
+          project={selectedProject}
+          memories={memories.filter((m) => Number(m.projectId) === Number(selectedProject.id))}
+          onSaveProject={(updated) => {
+            StorageService.saveProject(updated);
+            setSelectedProject(updated);
+            setProjects(StorageService.getProjects());
+            setShowEditProjectModal(false);
+          }}
+          onSaveAndCascade={async (updated, showrunnerDirectives) => {
+            StorageService.saveProject(updated);
+            setSelectedProject(updated);
+            setProjects(StorageService.getProjects());
+            setShowEditProjectModal(false);
+            if (showrunnerDirectives) {
+              await handlePropagateShowrunnerCascade(showrunnerDirectives);
+            }
+          }}
+          onPurgeResidues={() => {
+            // clean residues
+          }}
+        />
+      )}
+
+      <CascadePropagationModal
+        isOpen={showCascadeModal}
+        onClose={() => setShowCascadeModal(false)}
+        projectTitle={selectedProject?.title || ''}
+        steps={cascadeSteps}
+        currentStepIndex={cascadeStepIndex}
+        isComplete={isCascadeComplete}
+        error={cascadeError}
       />
     </div>
   );
 };
 
 export default App;
+

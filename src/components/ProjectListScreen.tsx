@@ -1,10 +1,11 @@
-import React from 'react';
-import { ArrowLeft, Trash2, Edit3, Film, Plus } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowLeft, Trash2, Edit3, Film, Plus, ExternalLink, Play } from 'lucide-react';
 import { MovieProject } from '../types';
 
 interface ProjectListScreenProps {
   projects: MovieProject[];
   onBackClick: () => void;
+  onSelectProject?: (project: MovieProject) => void;
   onEditProject: (project: MovieProject) => void;
   onDeleteProject: (project: MovieProject) => void;
   onCreateNewProject: () => void;
@@ -13,10 +14,13 @@ interface ProjectListScreenProps {
 export const ProjectListScreen: React.FC<ProjectListScreenProps> = ({
   projects,
   onBackClick,
+  onSelectProject,
   onEditProject,
   onDeleteProject,
   onCreateNewProject,
 }) => {
+  const [projectToDelete, setProjectToDelete] = useState<MovieProject | null>(null);
+
   return (
     <div className="min-h-[calc(100vh-65px)] max-w-4xl mx-auto p-6 sm:p-8 flex flex-col">
       {/* Top Bar */}
@@ -68,15 +72,19 @@ export const ProjectListScreen: React.FC<ProjectListScreenProps> = ({
       ) : (
         /* List of Projects */
         <div className="space-y-4">
-          {projects.map((project) => (
+          {projects.map((project, idx) => (
             <div
-              key={project.id}
+              key={`proj_${project.id}_${idx}`}
               className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
-              <div className="space-y-1.5 flex-1">
+              <div 
+                className="space-y-1.5 flex-1 cursor-pointer"
+                onClick={() => onSelectProject ? onSelectProject(project) : onEditProject(project)}
+              >
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-lg font-bold text-white">
-                    {project.title}
+                  <h3 className="text-lg font-bold text-white hover:text-amber-400 transition-colors flex items-center gap-2">
+                    <span>{project.title}</span>
+                    <ExternalLink className="w-3.5 h-3.5 opacity-40" />
                   </h3>
                   <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400">
                     {project.artStyle}
@@ -100,32 +108,77 @@ export const ProjectListScreen: React.FC<ProjectListScreenProps> = ({
 
               {/* Actions */}
               <div className="flex items-center gap-2 self-end sm:self-center">
-                <button
-                  onClick={() => {
-                    if (window.confirm(`¿Estás seguro de que deseas eliminar el proyecto "${project.title}"?`)) {
-                      onDeleteProject(project);
-                    }
-                  }}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 text-xs font-semibold transition-colors"
-                  title="Eliminar proyecto"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Eliminar</span>
-                </button>
+                {onSelectProject && (
+                  <button
+                    onClick={() => onSelectProject(project)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs transition-colors border border-slate-700 shadow-sm cursor-pointer"
+                    title="Abrir detalles de producción"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current text-amber-400" />
+                    <span>Abrir</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => onEditProject(project)}
                   data-testid={`project_edit_button_${project.id}`}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow-sm active:scale-95"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow-sm active:scale-95 cursor-pointer"
                 >
                   <Edit3 className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>Editar</span>
+                </button>
+
+                <button
+                  onClick={() => setProjectToDelete(project)}
+                  className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 text-xs font-semibold transition-colors cursor-pointer"
+                  title="Eliminar proyecto"
+                >
+                  <Trash2 className="w-4 h-4" />
                 </button>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* In-app Delete Confirmation Modal (no window.confirm iframe blocking) */}
+      {projectToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-lg font-bold text-white mb-1.5">
+              ¿Eliminar "{projectToDelete.title}"?
+            </h3>
+
+            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+              Esta acción eliminará de forma permanente el proyecto, su biblia de producción, el storyboard y todos los entregables generados.
+            </p>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setProjectToDelete(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                Cancelar
+              </button>
+
+              <button
+                onClick={() => {
+                  onDeleteProject(projectToDelete);
+                  setProjectToDelete(null);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-colors shadow-lg shadow-rose-600/20"
+              >
+                Eliminar definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

@@ -58,7 +58,7 @@ export const WizardStep1: React.FC<WizardStep1Props> = ({
             type="text"
             value={title}
             onChange={(e) => onTitleChange(e.target.value)}
-            placeholder="Ej. El Último Operador"
+            placeholder="Ej. El Despertar del Abismo"
             data-testid="wizard_title_input"
             className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-white placeholder-slate-500 text-sm outline-none transition-all"
           />

@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "Cine AI Studio",
+  "short_name": "Cine AI",
+  "description": "Orquestador de cine con subagentes de IA especializados por departamento y memoria central.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#020617",
+  "theme_color": "#090d16",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["entertainment", "productivity", "utilities"]
+}

@@ -61,6 +61,8 @@ export interface CinemaSubagent {
   outputDescription: string;
   suggestedPrompt: string;
   iconName: string;
+  tier?: 'premium' | 'standard' | 'economic';
+  kind?: 'text' | 'media';
 }
 
 export type GenerationState = 
@@ -76,3 +78,63 @@ export type AppScreen =
   | 'CREATION_PROGRESS'
   | 'PROJECT_LIST'
   | 'PROJECT_DETAILS';
+
+export type TextProviderId = 'google' | 'openai' | 'anthropic';
+export type ImageProviderId = 'google-imagen' | 'fal-flux' | 'openai-dalle';
+export type VideoProviderId = 'google-veo' | 'bytedance-seedance' | 'runway-gen3' | 'luma' | 'kling';
+
+export interface ProviderSettings {
+  textProvider: TextProviderId;
+  textModel: string;
+  imageProvider: ImageProviderId;
+  imageModel: string;
+  videoProvider: VideoProviderId;
+  videoModel: string;
+  geminiApiKey?: string;
+  openaiApiKey?: string;
+  anthropicApiKey?: string;
+  runwayApiKey?: string;
+  falApiKey?: string;
+}
+
+export interface VideoJob {
+  id: string;
+  projectId: number;
+  sceneNumber: number;
+  title: string;
+  prompt: string;
+  provider: VideoProviderId;
+  model: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  progressPercent: number;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  durationSec: number;
+  createdAt: number;
+  error?: string;
+}
+
+export interface GeneratedImage {
+  id: string;
+  projectId: number;
+  subagentKey: string;
+  title: string;
+  prompt: string;
+  provider: ImageProviderId;
+  model?: string;
+  imageUrl: string;
+  createdAt: number;
+}
+
+export interface MediaAsset {
+  id: string;
+  projectId: number;
+  type: 'image' | 'video' | 'audio' | 'music';
+  role?: string;
+  title: string;
+  url: string;
+  prompt: string;
+  provider: string;
+  model: string;
+  createdAt: number;
+}

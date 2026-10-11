@@ -12,10 +12,14 @@
     "start": "node server.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@google/genai": "^2.27.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.475.0",
+    "openai": "^7.32.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

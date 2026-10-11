@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, AlertTriangle, Play, Sparkles, Video, Volume2, SkipForward } from 'lucide-react';
+import { Check, AlertTriangle, Play, RotateCcw } from 'lucide-react';
 import { MovieProject } from '../types';
 
 interface CreationProgressScreenProps {
@@ -7,14 +7,11 @@ interface CreationProgressScreenProps {
   progressStepIndex: number;
   totalSteps: number;
   progressMessage: string;
-  isRenderingPromptVisible: boolean;
   renderingStatus: string;
   lastGenerationError: string | null;
-  useSecureGateway: boolean;
-  onToggleSecureGateway: (val: boolean) => void;
   onRetry: () => void;
-  onRenderActionSelected: (choice: 'ALL' | 'VIDEO' | 'AUDIO' | 'NONE') => void;
   onGoToProject: () => void;
+  onOpenProviderSettings?: () => void;
 }
 
 export const CreationProgressScreen: React.FC<CreationProgressScreenProps> = ({
@@ -22,20 +19,17 @@ export const CreationProgressScreen: React.FC<CreationProgressScreenProps> = ({
   progressStepIndex,
   totalSteps,
   progressMessage,
-  isRenderingPromptVisible,
   renderingStatus,
   lastGenerationError,
-  onToggleSecureGateway,
   onRetry,
-  onRenderActionSelected,
   onGoToProject,
+  onOpenProviderSettings,
 }) => {
   const isCompleted = renderingStatus === 'COMPLETED';
   const progressPercent = isCompleted
     ? 100
     : Math.min(100, Math.round((progressStepIndex / totalSteps) * 100));
 
-  // Circular stroke calculation
   const radius = 54;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
@@ -50,19 +44,19 @@ export const CreationProgressScreen: React.FC<CreationProgressScreenProps> = ({
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-black text-white mb-2">
-            ¡Proyecto Generado!
+            ¡Preproducción Completada con Éxito!
           </h2>
 
           <p className="text-slate-400 text-sm max-w-md mb-8 leading-relaxed">
-            Todos los orquestadores han completado sus entregables y la fase de renderizado se ha llevado a cabo con éxito.
+            Los 24 departamentos han finalizado sus entregables técnicos con modelos de IA reales. Tu biblia narrativa, diseño de personajes y prompts compilados están listos en el estudio.
           </p>
 
           <button
             onClick={onGoToProject}
             data-testid="progress_finish_button"
-            className="w-full py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-base transition-all shadow-lg shadow-amber-500/10 active:scale-[0.99] flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-base transition-all shadow-lg shadow-amber-500/10 active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
           >
-            <span>Ver Proyecto</span>
+            <span>Explorar Galería de Producción</span>
             <Play className="w-4 h-4 fill-slate-950" />
           </button>
         </div>
@@ -78,45 +72,48 @@ export const CreationProgressScreen: React.FC<CreationProgressScreenProps> = ({
           </h3>
 
           <p className="text-slate-400 text-xs sm:text-sm mb-4">
-            La orquestación de la IA se detuvo debido a un problema de configuración o conexión remota.
+            La llamada a los modelos de IA se detuvo debido a un problema con la clave API, cuenta o cuota del proveedor.
           </p>
 
           {/* Error detail */}
           <div className="w-full p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-left mb-5">
             <span className="text-[11px] font-bold text-rose-400 block mb-1 uppercase tracking-wider">
-              Detalle técnico:
+              Diagnóstico técnico:
             </span>
-            <p className="text-xs text-rose-200 font-mono break-words">
+            <p className="text-xs text-rose-200 font-mono break-words leading-relaxed">
               {lastGenerationError}
             </p>
           </div>
 
-          {/* Simulation fallback card */}
-          <div className="w-full p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left mb-6">
-            <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wide mb-1 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Resiliencia L5 (Modo Demo Offline)</span>
-            </h4>
-            <p className="text-xs text-slate-300 mb-3">
-              Puedes activar el "Modo Simulación Segura (L5)" para evitar llamadas de red remotas y emular al instante la producción de los 13 departamentos sin claves ni saldo.
-            </p>
+          <div className="w-full space-y-2.5">
+            {onOpenProviderSettings && (
+              <button
+                onClick={onOpenProviderSettings}
+                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              >
+                <span>🔑 Configurar API Key / Cambiar Proveedor</span>
+              </button>
+            )}
+
             <button
-              onClick={() => {
-                onToggleSecureGateway(true);
-                onRetry();
-              }}
-              className="w-full py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors"
+              onClick={onRetry}
+              className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                onOpenProviderSettings
+                  ? 'border border-slate-700 hover:bg-slate-800 text-slate-200'
+                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md'
+              }`}
             >
-              Activar Simulación y Reintentar
+              <RotateCcw className="w-4 h-4" />
+              <span>Reintentar Llamada al Proveedor</span>
+            </button>
+
+            <button
+              onClick={onGoToProject}
+              className="w-full py-2.5 rounded-xl border border-slate-800 hover:bg-slate-900 text-slate-400 hover:text-slate-200 text-xs font-medium transition-colors cursor-pointer"
+            >
+              Ir al Proyecto (Revisar avances guardados)
             </button>
           </div>
-
-          <button
-            onClick={onGoToProject}
-            className="w-full py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 text-sm font-medium transition-colors"
-          >
-            Ir al Proyecto (Incompleto)
-          </button>
         </div>
       ) : (
         /* IN PROGRESS STATE */
@@ -145,74 +142,28 @@ export const CreationProgressScreen: React.FC<CreationProgressScreenProps> = ({
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-white">
+              <span className="text-3xl font-black text-white font-mono">
                 {progressPercent}%
               </span>
               <span className="text-[10px] text-slate-400 uppercase tracking-wider">
-                Fase {progressStepIndex + 1}/{totalSteps}
+                Paso {progressStepIndex + 1} de {totalSteps}
               </span>
             </div>
           </div>
 
-          <h3 className="text-xl font-bold text-white mb-3">
-            Construyendo Corto de Cine...
-          </h3>
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="text-xl font-bold text-white">
+              Ejecutando Pipeline Cinematográfico...
+            </h3>
+          </div>
 
           {/* Current action card with pulse dot */}
-          <div className="w-full p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center gap-3.5 mb-6 text-left shadow-lg">
-            <div className="w-3 h-3 rounded-full bg-amber-400 animate-ping flex-shrink-0" />
+          <div className="w-full p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center gap-3.5 text-left shadow-lg">
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping flex-shrink-0" />
             <p className="text-xs sm:text-sm text-slate-200 font-medium">
               {progressMessage}
             </p>
           </div>
-
-          {/* Optional Prompt: Render video/audio stage */}
-          {isRenderingPromptVisible && (
-            <div className="w-full p-5 rounded-2xl bg-amber-500/10 border-2 border-amber-500/80 text-left animate-slide-up shadow-xl shadow-amber-500/5">
-              <h4 className="text-base font-bold text-amber-400 mb-1 text-center">
-                ¿Deseas renderizar Video, Audio y Banda Sonora?
-              </h4>
-              <p className="text-xs text-slate-300 text-center mb-4 leading-relaxed">
-                Estas fases generan vídeo y audio cinematográficos, lo que requiere un mayor procesamiento cómputo.
-              </p>
-
-              <div className="space-y-2.5">
-                <button
-                  onClick={() => onRenderActionSelected('ALL')}
-                  data-testid="render_all_button"
-                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm transition-all flex items-center justify-center gap-2"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Renderizar Todo</span>
-                </button>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => onRenderActionSelected('VIDEO')}
-                    className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 border border-slate-700"
-                  >
-                    <Video className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Solo Video</span>
-                  </button>
-                  <button
-                    onClick={() => onRenderActionSelected('AUDIO')}
-                    className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 border border-slate-700"
-                  >
-                    <Volume2 className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Solo Audio</span>
-                  </button>
-                </div>
-
-                <button
-                  onClick={() => onRenderActionSelected('NONE')}
-                  className="w-full py-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 text-xs transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <SkipForward className="w-3.5 h-3.5" />
-                  <span>Saltar esta fase</span>
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

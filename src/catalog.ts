@@ -26,7 +26,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Sinopsis de base, presupuesto, género literario, duración estimada, formato.',
     outputDescription: 'Project Bible unificado + Plan de producción estratégico.',
-    suggestedPrompt: 'Genera el Project Bible para una miniserie de ciencia ficción ambientada en una megaciudad brutalista. El tono debe ser sombrío, reflexivo y de ritmo pausado, dirigida a público adulto.',
+    suggestedPrompt: 'Genera la Project Bible y directiva maestra de producción cinematográfica adaptada al argumento, tono narrativo y estilo visual del proyecto.',
     iconName: 'stars',
   },
 
@@ -43,8 +43,8 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
       'Maneja el versionado de guion en base a notas de producción.',
     ],
     inputDescription: 'Project Bible, notas del Showrunner, esquema de personajes.',
-    outputDescription: 'Guion Literario (Escenas estructuradas con diálogos).',
-    suggestedPrompt: 'Basado en la biblia brutalista, escribe la primera escena del guion. Presenta a un operario de mantenimiento de paneles holográficos en la cima de una torre inclinada, en una conversación tensa con control.',
+    outputDescription: 'Guion Literario (Escenas estructuradas con diálogos en formato profesional).',
+    suggestedPrompt: 'Escribe la escena de apertura y guion literario con formato cinematográfico estándar, diálogos contundentes y acotaciones visuales inmersivas basadas en el argumento.',
     iconName: 'description',
   },
   {
@@ -59,7 +59,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Guion literario original, notas de revisión del Showrunner.',
     outputDescription: 'Guion Pulido con diálogos intensificados y ritmo optimizado.',
-    suggestedPrompt: 'Pulir los diálogos de la escena anterior. Aumenta la tensión subterránea y la ironía de los personajes, evitando clisés de ciencia ficción.',
+    suggestedPrompt: 'Realiza el análisis dramatúrgico y pulido de guion: optimiza el ritmo, intensifica el subtexto y elimina redundancias en los diálogos.',
     iconName: 'healing',
   },
   {
@@ -74,7 +74,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Guion literario pulido, esquemas de desglose de arte.',
     outputDescription: 'Continuity Bible detallando el estado de cada personaje y escena.',
-    suggestedPrompt: 'Genera las especificaciones de continuidad para la escena del panel holográfico. Define el estado físico del operario, vestuario desgastado húmedo por la lluvia, herramientas en el cinturón y hora del día al anochecer.',
+    suggestedPrompt: 'Genera las especificaciones de continuidad técnica y raccord: estado físico de personajes, vestuario, utilería de mano e iluminación diegética entre planos.',
     iconName: 'history',
   },
   {
@@ -90,7 +90,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Guion literario, Continuity Bible.',
     outputDescription: 'Instrucciones de Intención Directorial (Traducción de narrativa a parámetros técnicos).',
-    suggestedPrompt: 'Genera el plan directorial para el operario del panel. Define el subtexto emocional (aislamiento y vértigo) y traduce esto en instrucciones de encuadre en plano holandés y movimientos lentos con lentes de focal larga.',
+    suggestedPrompt: 'Elabora las directivas de puesta en escena y blocking actoral: vector psicológico dominante, subtexto emocional y trayectorias físicas de los personajes respecto a cámara.',
     iconName: 'movie',
   },
 
@@ -107,7 +107,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Project Bible, Guion literario.',
     outputDescription: 'Art Bible con paleta de colores hexadecimales, materialidad y estilos de referencia.',
-    suggestedPrompt: 'Define la paleta cromática y estética brutalista para la megaciudad. Describe el uso de hormigón crudo expuesto, luces de neón en tonos turquesa y ámbar apagado, y texturas de asfalto mojado bajo lluvia ácida.',
+    suggestedPrompt: 'Define la propuesta estética visual y Art Bible: paleta cromática con códigos hexadecimales (#HEX), materialidad de superficies y dirección artística general.',
     iconName: 'palette',
   },
   {
@@ -123,7 +123,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Art Bible, descripciones de personajes del guion.',
     outputDescription: 'Character Sheets y Turnaround referenciales.',
-    suggestedPrompt: 'Genera la ficha técnica y de vestuario de "Kael", el operario. Edad 38 años, marcas de quemaduras por silicio en los dedos, gabardina sintética de lluvia reforzada, visor HUD desgastado con reflejos amarillos.',
+    suggestedPrompt: 'Genera el Character Sheet y ficha de vestuario del personaje protagónico: fisionomía, rasgos fisonómicos, marcas distintivas, silueta y prendas acordes al estilo visual.',
     iconName: 'face',
   },
   {
@@ -139,7 +139,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Character Sheets primarios, renders de prueba.',
     outputDescription: 'Guía de Coherencia Facial y Tokens de Consistencia del Rostro.',
-    suggestedPrompt: 'Escribe el instructivo técnico para mantener la cara de Kael invariable. Detalla la geometría de su mandíbula angular, cicatriz en la ceja izquierda, y parámetros de anclaje de FaceID para el generador visual.',
+    suggestedPrompt: 'Escribe la guía de coherencia facial y anclaje de identidad: define proporciones óseas, parámetros FaceID y tokens de consistencia para prevenir aberraciones en los generadores.',
     iconName: 'portrait',
   },
   {
@@ -154,7 +154,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Art Bible, descripciones escénicas de guion.',
     outputDescription: 'Environment Blueprint y guías arquitectónicas del set.',
-    suggestedPrompt: 'Diseña y describe la arquitectura de la torre de control de paneles. Especifica el hormigón agrietado, andamios colgantes de fibra de carbono, cables gruesos cayendo al vacío y la disposición espacial.',
+    suggestedPrompt: 'Diseña el Environment Blueprint y la arquitectura escénica del set principal: distribución espacial en planta, materiales constructivos y puntos focales para la cámara.',
     iconName: 'domain',
   },
   {
@@ -169,7 +169,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: "Director's Plan (Capa 1), Environment Blueprints.",
     outputDescription: 'Camera & Lens Bible detallando distancias focales, velocidad de diafragma y movimiento.',
-    suggestedPrompt: 'Define la configuración de cámara para el plano inicial de Kael en la torre. Elige un lente anamórfico de 35mm para capturar la inmensidad del abismo, con un paneo descendente lento y desenfoque progresivo.',
+    suggestedPrompt: 'Define la configuración de cámara y óptica cinematográfica: relación de aspecto (2.39:1 o 16:9), distancia focal de lentes (35mm / 85mm), diafragma y estilo de movimiento.',
     iconName: 'videocam',
   },
   {
@@ -184,7 +184,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Camera & Lens Bible, Art Bible, descripción física del set.',
     outputDescription: 'Lighting Blueprint con diagramas y temperaturas de color en grados Kelvin.',
-    suggestedPrompt: 'Crea el esquema de iluminación para el anochecer húmedo en la torre. Diseña un esquema de tres puntos con una luz de recorte de neón azul de 8000K, un relleno cálido de 3000K proveniente del visor del operario, y sombras profundas.',
+    suggestedPrompt: 'Crea el esquema de iluminación cinematográfica para las tomas clave: esquema de tres puntos (Key, Fill, Rim), temperaturas de color en Kelvin y ratio de contraste de sombras.',
     iconName: 'wb_sunny',
   },
   {
@@ -199,7 +199,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Guion de escena, Camera & Lens Bible.',
     outputDescription: 'Secuencia de Storyboard (Descripción técnica y visual de frames clave).',
-    suggestedPrompt: 'Genera las descripciones detalladas para una secuencia de 4 cuadros de storyboard de la escena 1. Frame 1: Gran plano general de la torre. Frame 2: Detalle de las manos de Kael temblando. Frame 3: Plano medio con Kael mirando al abismo. Frame 4: Primer plano del visor.',
+    suggestedPrompt: 'Genera las descripciones detalladas de una secuencia de 4 cuadros de storyboard: encuadre, ángulo de cámara, acción dramática y prompts optimizados en inglés para renderizadores de video.',
     iconName: 'grid_view',
   },
   {
@@ -214,8 +214,26 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Environment Blueprint, Storyboard, Fichas de personaje.',
     outputDescription: 'Layout Spatial Plan (Blocking técnico de personajes y cámara).',
-    suggestedPrompt: 'Define el blocking de Kael y la cámara en la torre de paneles. Kael inicia arrodillado frente al panel de fusibles, avanza 1.5 metros hacia el borde del andamio, y la cámara se desplaza horizontalmente de derecha a izquierda.',
+    suggestedPrompt: 'Define la composición espacial y el blocking técnico: posiciones métricas iniciales, trayectorias sobre el eje de coordenadas y desplazamientos de cámara coordinados.',
     iconName: 'layers',
+  },
+  {
+    key: 'PROMPT_ENGINEER',
+    name: 'Ingeniero de Prompts Generativos',
+    role: 'Multimedia Prompt Engineer (Imagen, Video, Audio, Música)',
+    layer: CINEMA_LAYERS[2],
+    layerId: 2,
+    duties: [
+      'Destila y ensambla los entregables de todos los orquestadores eliminando el 100% de metadatos burocráticos.',
+      'Sintetiza prompts fotorrealistas de alta fidelidad para modelos de imagen (Google Imagen 3, Flux Pro, Midjourney).',
+      'Diseña prompts cinemáticos de cámara, movimiento y física para motores de video (Google Veo, Runway Gen-3, ByteDance Seedance 2.0, Kling).',
+      'Formula directivas acústicas y de foley para generadores de efectos de sonido (ElevenLabs SFX, AudioCraft, Stable Audio).',
+      'Estructura prompts de tempo (BPM), instrumentación y emoción para generadores musicales (Suno, Udio, MusicFX).',
+    ],
+    inputDescription: 'Character Sheets, Environment Blueprints, Art Bible, Camera & Lens Bible, Foley Cue Sheets y Score Directives.',
+    outputDescription: 'Prompts Maestros Limpios y Optimizados para Generación de Imagen, Video, Audio y Música.',
+    suggestedPrompt: 'Sintetiza las directivas de todos los departamentos en prompts maestros optimizados para Imagen (fotorrealismo), Video (movimiento de cámara), Audio (foley ambiental) y Música (leitmotifs), eliminando todo residuo burocrático.',
+    iconName: 'auto_fix_high',
   },
 
   // Capa 3
@@ -231,7 +249,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Storyboard sequences, Layout Spatial Plan.',
     outputDescription: 'Instrucciones de Animación Clave y curvas de tiempo/frecuencia.',
-    suggestedPrompt: 'Genera el plan de animación de poses clave para Kael cuando se levanta del andamio. Describe el movimiento pesado, la fatiga física manifestada en los hombros caídos y el tirón repentino al reaccionar al comunicador.',
+    suggestedPrompt: 'Genera el plan de animación de poses clave: cinética corporal, gestualidad emocional, peso físico y arcos de aceleración/desaceleración en cada acción.',
     iconName: 'run_circle',
   },
   {
@@ -246,7 +264,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Animación principal aprobada, características materiales de la tela y ropa.',
     outputDescription: 'Instructivo de Simulación Física de Ropa y Dinámicas de Viento.',
-    suggestedPrompt: 'Configura el movimiento de la gabardina de Kael bajo las inclemencias de la megaciudad. Detalla cómo la tela pesada oscila hacia la derecha por ráfagas de viento, y la inercia del agua acumulada húmedamente en los bordes.',
+    suggestedPrompt: 'Configura las físicas secundarias: dinámica de telas, comportamiento del cabello ante el movimiento e inercias de accesorios con seguimiento inercial.',
     iconName: 'waves',
   },
   {
@@ -261,7 +279,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Flujos de render brutos, mapas de profundidad secuenciales.',
     outputDescription: 'Reporte de Consistencia Temporal y Parámetros de Estabilización de Ruido.',
-    suggestedPrompt: 'Genera el plan de control de consistencia para los andamios metálicos bajo la lluvia. Controla las líneas finas de los cables de tensión para prevenir parpadeos luminosos aplicando anclajes de ruido en un 60%.',
+    suggestedPrompt: 'Establece el protocolo de coherencia temporal: control de flujo óptico, atenuación de artefactos de parpadeo (deflickering) y anclaje de ruido latente entre fotogramas.',
     iconName: 'lock',
   },
   {
@@ -271,12 +289,12 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     layer: CINEMA_LAYERS[3],
     layerId: 3,
     duties: [
-      'Diseña la creación e integración de efectos de partículas (lluvia ácida, chispas eléctricas, fuego, humo).',
+      'Diseña la creación e integración de efectos de partículas (lluvia, chispas eléctricas, fuego, humo, magia, atmósfera).',
       'Asegura la fusión natural de estos generadores con el fondo.',
     ],
     inputDescription: 'Art Bible, secuencias de animación aprobadas.',
     outputDescription: 'VFX Blueprint (Capas y especificaciones de partículas y chispas).',
-    suggestedPrompt: 'Diseña los efectos visuales del panel holográfico averiado. El cableado expuesto genera chispas ámbar de trayectoria aleatoria y un humo espeso blanco que circula alrededor del visor del casco de Kael.',
+    suggestedPrompt: 'Diseña el VFX Blueprint: efectos de partículas ambientales, capas atmosféricas, elementos volumétricos e integración con la geometría diegética del set.',
     iconName: 'bolt',
   },
   {
@@ -291,7 +309,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'VFX Blueprints, Layout Spatial Plan.',
     outputDescription: 'Ficha de Parámetros Dinámicos de Colisión Física.',
-    suggestedPrompt: 'Genera la simulación de las gotas de lluvia colisionando con el andamio de metal y rebotando en salpicaduras esféricas micrométricas, escurriendo por la pendiente de hormigón.',
+    suggestedPrompt: 'Configura las simulaciones físicas de colisión y fluidos: viscosidad, rebote superficial, fricción de materiales y dispersión geométrica de micropartículas.',
     iconName: 'grain',
   },
 
@@ -308,7 +326,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Guion de la escena, Project Bible (Tono y ritmo).',
     outputDescription: 'Score Directives (Estructura de la partitura, instrumentos, acordes, ritmo bpm).',
-    suggestedPrompt: 'Genera las directivas de partitura para la escena de Kael. Se requiere un tema ambiental oscuro de sintetizador analógico de baja frecuencia a 65 bpm, con un violonchelo melancólico que entra en el momento del abismo.',
+    suggestedPrompt: 'Genera las directivas de partitura y banda sonora original: instrumentación, tempo (BPM), progresión armónica y leitmotivs que refuercen el tono dramático de la escena.',
     iconName: 'music_note',
   },
   {
@@ -323,7 +341,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Guion literario con acciones físicas, Layout Spatial Plan.',
     outputDescription: 'Sound FX Cue Sheet (Listado e instrucciones de sonidos de foley).',
-    suggestedPrompt: 'Diseña el Sound Cue Sheet para los momentos de Kael en el andamio. Incluye: goteo metálico rítmico, zumbido eléctrico en alta frecuencia del panel averiado, viento silbante sordo de gran altura y fricción sintética de su gabardina al levantarse.',
+    suggestedPrompt: 'Diseña el Sound FX Cue Sheet y capas de foley: texturas acústicas ambientales, ruidos de indumentaria, pasos y puntuaciones de impacto diegético.',
     iconName: 'volume_up',
   },
   {
@@ -338,7 +356,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Diálogos grabados, Score musical, Sound FX cues.',
     outputDescription: 'Plan de Mezcla Multicanal y Reverberaciones de Entorno.',
-    suggestedPrompt: 'Diseña la mezcla de audio para la escena de altura. Estructura el viento con paneo estéreo abierto envolvente, los diálogos del casco con compresión radiofónica de banda estrecha, y la música silenciándose un 30% en los diálogos.',
+    suggestedPrompt: 'Diseña la mezcla de audio multicanal: balance de ganancia entre diálogos, música y efectos (ducking), paneo envolvente y curvas de ecualización espacial.',
     iconName: 'equalizer',
   },
 
@@ -355,7 +373,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Secuencias renderizadas, Storyboard, Temas aprobados.',
     outputDescription: 'Editing Decision List (EDL) con cortes exactos por segundo.',
-    suggestedPrompt: 'Genera las pautas de montaje para la escena. Inicia con 4 segundos de atmósfera en plano general, corta bruscamente a 2 segundos del detalle de las manos, 5 segundos del plano medio cuando reacciona y primer plano de 3 segundos de tensión.',
+    suggestedPrompt: 'Genera el plan de montaje y ritmo editorial: duraciones exactas de planos, puntos de corte dramático y transiciones directas para maximizar la tensión narrativa.',
     iconName: 'content_cut',
   },
   {
@@ -370,7 +388,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Art Bible, tomas montadas en crudo.',
     outputDescription: 'LUT de Color Cinematográfico Oficial y Guía de Look / Hue.',
-    suggestedPrompt: 'Diseña el LUT de color para la producción. Contempla una desaturación de tonos verdes y cálidos de un 30%, realce severo del contraste en negros y un brillo neón cian prominente por mapeo selectivo.',
+    suggestedPrompt: 'Diseña el LUT cinematográfico y especificaciones de etalonaje digital: contraste tonal, gradación de sombras, medios tonos y altas luces en concordancia con la Art Bible.',
     iconName: 'compare',
   },
   {
@@ -385,7 +403,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Montaje final mezclado y con color definitivo.',
     outputDescription: 'Ficha de Envíos Cinematográficos y Configuración de Rendering Ultra-HD.',
-    suggestedPrompt: 'Define la configuración de remasterización final. Mapea negros en HDR a 0.005 nits, brillo máximo en neones a 1000 nits, exportación a un contenedor de aspecto cinematográfico 2.39:1 anamórfico.',
+    suggestedPrompt: 'Define las especificaciones de masterización final y entrega técnica: espacio de color, codificación para cines (DCP) o streaming, y rango dinámico HDR.',
     iconName: 'settings_backup_restore',
   },
 
@@ -403,7 +421,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Project Bible, Escaleta de escenas, número de planos.',
     outputDescription: 'Project Schedule (Cronograma de Rodaje y Prioridades de Renderizado).',
-    suggestedPrompt: 'Crea una hoja de ruta de producción para rodar y pre-renderizar los 5 planos de la escena de la torre de paneles holográficos. Optimiza los tiempos empezando por los sets y props mecánicos.',
+    suggestedPrompt: 'Crea el cronograma de rodaje y optimización de render: orden secuencial de planos, estimación de cómputo y prioridades de preproducción para la entrega.',
     iconName: 'schedule',
   },
   {
@@ -418,7 +436,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Archivos generados por cada capa de agentes, alertas de cambios.',
     outputDescription: 'Sincronizador Automático de Metadatos y Estructuras.',
-    suggestedPrompt: 'Genera un reporte de dependencias de pipeline técnico. Muestra cómo un cambio en el "Environment Blueprint" del Diseñador de Producción afecta al Director de Fotografía, Gaffer y Storyboarder, indicando rutas de datos.',
+    suggestedPrompt: 'Genera el esquema de dependencias del pipeline: flujo de datos entre capas, contratos de sincronización de memoria y trazabilidad de cambios en tiempo real.',
     iconName: 'sync',
   },
   {
@@ -433,7 +451,7 @@ export const CINEMA_SUBAGENTS_CATALOG: CinemaSubagent[] = [
     ],
     inputDescription: 'Fotomontajes finales, tomas renderizadas terminadas.',
     outputDescription: 'Reporte de Control de Calidad (QC Audit Report) con marcas de aprobación o reprobación.',
-    suggestedPrompt: 'Genera un reporte de control de calidad para el plano final de Kael. Revisa si hay deformidades en sus manos robóticas, inconsistencia de neones parpadeantes en el fondo o ruido excesivo HDR.',
+    suggestedPrompt: 'Ejecuta la auditoría de control de calidad: verificación de consistencia anatómica en personajes, ausencia de artefactos generativos y fidelidad a la Project Bible.',
     iconName: 'fact_check',
   },
 ];
@@ -444,6 +462,8 @@ export function getSubagentCostInfo(key: string): string | null {
       return 'Costo estimado: $0.03 USD (Categoría IMAGEN/Moodboard)';
     case 'CHARACTER_DESIGNER':
       return 'Costo estimado: $0.04 USD (Categoría IMAGEN/Fichas)';
+    case 'PROMPT_ENGINEER':
+      return 'Costo estimado: $0.01 USD (Categoría MULTIMODAL/Prompt Synthesis)';
     case 'STORYBOARD':
       return 'Costo estimado: $0.08 USD (Categoría IMAGEN/Secuencia)';
     case 'LEAD_ANIMATOR':
